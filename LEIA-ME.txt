@@ -1,0 +1,80 @@
+==========================================================
+   GYROFLOW AUTO — by Paroneto
+   Pluga o cartão → copia → junta → estabiliza. Sozinho.
+==========================================================
+
+O QUE ELE FAZ
+- Você pluga o cartão da GoPro ou da DJI O4 Pro e ele:
+  1. copia os vídeos novos para um cache (nunca estabiliza direto do cartão)
+  2. junta os arquivos que a O4 corta no meio (só quando tem certeza:
+     1º arquivo com ~3,76 GB + o próximo começa logo em seguida)
+  3. estabiliza no Gyroflow com o SEU preset padrão do Gyroflow,
+     na mesma resolução e fps que você gravou, MP4 H.265 10-bit
+  4. salva em  Área de Trabalho / <Nome do Evento> /  e apaga o cache
+  5. lembra o que já foi feito — plugou de novo, não refaz
+- Só pergunta o nome do evento quando é um evento NOVO (pela data/hora
+  das gravações). Se ninguém responder em 90 s, usa "Evento DD-MM-AAAA".
+- Mantém Log 10-bit, range, data de gravação e metadados da câmera.
+
+ANTES DE INSTALAR
+- Tenha o GYROFLOW instalado:  https://gyroflow.xyz/download
+- Abra o Gyroflow uma vez e deixe o seu preset padrão do jeito que gosta
+  (o Gyroflow Auto usa a suavização desse preset; padrão do app = 30%).
+- Internet ligada na instalação (ela baixa Python, ffmpeg e mp4_merge
+  sozinha, ~100–150 MB). Não precisa instalar mais nada.
+
+----------------------------------------------------------
+ MAC
+----------------------------------------------------------
+1. Abra a pasta "Mac" e dê dois cliques em  "Instalar Gyroflow Auto.command".
+   • Se o Mac disser que não pode abrir (desenvolvedor não identificado):
+     botão direito no arquivo > Abrir > Abrir.
+     Ou: Ajustes do Sistema > Privacidade e Segurança > "Abrir Mesmo Assim".
+2. Espera terminar (menos de 1 minuto). O app "Gyroflow Auto" aparece na
+   Área de Trabalho e já abre.
+3. Na primeira vez, aceite quando o Mac pedir acesso a volumes removíveis.
+
+Uso no Mac:
+- Ícone no Dock com bolinha = LIGADO.
+- Clique no ícone do Dock > Opções… : suavidade 30%/50% e aplicar COR.
+- Para desligar: feche o app (⌘Q ou botão direito no Dock > Encerrar).
+
+----------------------------------------------------------
+ WINDOWS
+----------------------------------------------------------
+1. Extraia o .zip (botão direito > Extrair tudo). Não rode de dentro do zip.
+2. Abra a pasta "Windows" e dê dois cliques em  "Instalar Gyroflow Auto.bat".
+   • Se aparecer "O Windows protegeu o computador":
+     clique em "Mais informações" > "Executar assim mesmo".
+3. Espera terminar (o ffmpeg tem ~140 MB, pode levar uns minutos).
+   Se ele não achar o Gyroflow, abre uma janela para você escolher o
+   Gyroflow.exe.
+4. Aparece o atalho "Gyroflow Auto" na Área de Trabalho e no Menu Iniciar.
+
+Uso no Windows:
+- Janela do Gyroflow Auto aberta = LIGADO (pode minimizar).
+- Botões: Suavidade 30%/50%, Aplicar COR numa pasta, Abrir Área de Trabalho.
+- Para desligar: feche a janela.
+
+----------------------------------------------------------
+ COR (só quando VOCÊ pede — nunca automático)
+----------------------------------------------------------
+Opções > "Aplicar COR numa pasta…" > escolha a pasta do evento.
+Cria ao lado de cada vídeo um  *_stabilized_COR.mp4  com:
+- O4 Pro:  D-Log M → Rec709  +  look FUJI CLÁSSICO (Paroneto) a 50%
+- GoPro :  GoPro Log → Rec709 +  look FUJI CLÁSSICO (Paroneto) a 50%
+O arquivo em Log continua lá, intacto.
+
+----------------------------------------------------------
+ DICAS / PROBLEMAS
+----------------------------------------------------------
+- Não feche o app enquanto estiver estabilizando (ele avisa).
+- Se der erro, veja o log:
+    Mac:     ~/Library/Logs/GyroflowAuto.log
+    Windows: %LOCALAPPDATA%\GyroflowAuto\GyroflowAuto.log
+- Ajustes avançados (pasta de saída, horas entre eventos, LUTs, % do look):
+    Mac:     ~/Library/Application Support/GyroflowAuto/config.json
+    Windows: %LOCALAPPDATA%\GyroflowAuto\config.json
+- Para atualizar: rode o instalador de novo (mantém config e histórico).
+
+Feito por Yuri Paroneto
