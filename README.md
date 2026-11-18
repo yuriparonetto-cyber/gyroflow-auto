@@ -17,6 +17,10 @@ Funciona no **Mac** e no **Windows**. Precisa ter o [Gyroflow](https://gyroflow.
 
 O instalador baixa sozinho o Python, o ffmpeg e o mp4_merge. O guia completo está no [LEIA-ME.txt](LEIA-ME.txt).
 
+## Painel
+
+Um painel escuro mostra tudo ao vivo: se está ligado, o vídeo que está estabilizando (com % e quanto falta), a fila, o último evento, o total de vídeos estabilizados e a atividade. A suavidade (30%, 60% padrão, 80%), o "Refazer cartão plugado" e o "Aplicar cor" ficam a um clique. Quando chega um evento novo, a pergunta aparece no próprio painel.
+
 ## O que ele faz
 
 - Copia os vídeos novos para um cache (nunca estabiliza direto do cartão).

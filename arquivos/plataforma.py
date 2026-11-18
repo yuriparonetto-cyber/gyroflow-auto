@@ -2,7 +2,7 @@
 Gyroflow Auto — by Paroneto
 Camada de plataforma: tudo que muda entre Mac e Windows fica aqui.
 """
-import os, re, shutil, subprocess, sys, json
+import os, re, shutil, subprocess, sys, json, time
 from pathlib import Path
 
 IS_WIN = sys.platform.startswith("win")
@@ -243,9 +243,48 @@ class SingleInstance:
             self.ok = False
 
 
-def write_status(estado, detalhe=""):
+def pid_alive(pid):
+    """Processo ainda existe? (no Windows, os.kill mataria o processo — por isso o ctypes)."""
     try:
-        (APP_DIR / "status.json").write_text(json.dumps({"estado": estado, "detalhe": detalhe, "pid": os.getpid()},
-                                                         ensure_ascii=False), encoding="utf-8")
+        pid = int(pid)
+    except (TypeError, ValueError):
+        return False
+    if pid <= 0:
+        return False
+    if IS_WIN:
+        import ctypes
+        k = ctypes.windll.kernel32
+        h = k.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not h:
+            return False
+        code = ctypes.c_ulong()
+        ok = k.GetExitCodeProcess(h, ctypes.byref(code))
+        k.CloseHandle(h)
+        return bool(ok) and code.value == 259  # STILL_ACTIVE
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+
+
+def open_path(p):
+    """Abre pasta/arquivo no Finder / Explorer."""
+    if IS_WIN:
+        os.startfile(str(p))
+    else:
+        subprocess.Popen(["open", str(p)])
+
+
+def write_status(estado, detalhe="", **extra):
+    """status.json lido pelo painel. extra: pct, eta, fila, evento…"""
+    try:
+        d = {"estado": estado, "detalhe": detalhe, "pid": os.getpid(), "t": time.time()}
+        d.update(extra)
+        tmp = APP_DIR / f"status.{os.getpid()}.tmp"
+        tmp.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, APP_DIR / "status.json")
     except Exception:
         pass

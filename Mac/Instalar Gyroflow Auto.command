@@ -26,12 +26,15 @@ echo "✅ Gyroflow encontrado"
 # 2) para versão antiga se estiver rodando
 if [ -z "$GFA_NO_OPEN" ]; then
   pkill -f "Gyroflow Auto.app/Contents/MacOS/applet" 2>/dev/null || true
+  pkill -f "GyroflowAuto/painel.pyw" 2>/dev/null || true
   [ -f "$APP/gyroflow_auto.pid" ] && kill "$(cat "$APP/gyroflow_auto.pid")" 2>/dev/null || true
+  sleep 1
 fi
 
 # 3) arquivos do app (config e histórico ficam)
 mkdir -p "$APP/bin" "$APP/luts"
-cp "$SRC"/*.py "$SRC"/painel.pyw "$SRC"/app.applescript "$SRC"/icone.icns "$APP/"
+cp "$SRC"/*.py "$SRC"/painel.pyw "$SRC"/icone.icns "$SRC"/icone.png "$APP/"
+rm -f "$APP/app.applescript"  # versão antiga (AppleScript) não é mais usada
 cp "$SRC"/luts/*.cube "$APP/luts/"
 echo "✅ Arquivos copiados para: $APP"
 
@@ -74,27 +77,48 @@ fi
 xattr -dr com.apple.quarantine "$APP/bin" 2>/dev/null || true
 echo "✅ mp4_merge pronto"
 
-# 7) cria o app "Gyroflow Auto" na Área de Trabalho
+# 7) cria o app "Gyroflow Auto" na Área de Trabalho (abre o painel)
 echo "🔨 Criando o app…"
 T="$(mktemp -d)"
-sed "s#__PYTHON__#'$PY'#g" "$APP/app.applescript" > "$T/app.applescript"
-osacompile -s -o "$T/Gyroflow Auto.app" "$T/app.applescript"
-rm -f "$T/Gyroflow Auto.app/Contents/Resources/Assets.car"
-cp "$APP/icone.icns" "$T/Gyroflow Auto.app/Contents/Resources/applet.icns"
-/usr/libexec/PlistBuddy -c "Delete :CFBundleIconName" "$T/Gyroflow Auto.app/Contents/Info.plist" 2>/dev/null || true
-/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.paroneto.gyroflowauto" "$T/Gyroflow Auto.app/Contents/Info.plist" 2>/dev/null \
-  || /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string com.paroneto.gyroflowauto" "$T/Gyroflow Auto.app/Contents/Info.plist"
-codesign --force -s - "$T/Gyroflow Auto.app" 2>/dev/null || true
+B="$T/Gyroflow Auto.app"
+mkdir -p "$B/Contents/MacOS" "$B/Contents/Resources"
+cp "$APP/icone.icns" "$B/Contents/Resources/applet.icns"
+ln -s "$PY" "$B/Contents/MacOS/python3"   # o painel roda "dentro" do app: ícone e nome certos no Dock
+cat > "$B/Contents/MacOS/GyroflowAuto" <<SH
+#!/bin/bash
+export GFA_BUNDLE="\$(cd "\$(dirname "\$0")/../.." && pwd)"
+cd "$APP"
+exec "\$(dirname "\$0")/python3" -u "$APP/painel.pyw" 2>>"\$HOME/Library/Logs/GyroflowAuto.err"
+SH
+chmod +x "$B/Contents/MacOS/GyroflowAuto"
+cat > "$B/Contents/Info.plist" <<PL
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleName</key><string>Gyroflow Auto</string>
+  <key>CFBundleDisplayName</key><string>Gyroflow Auto</string>
+  <key>CFBundleIdentifier</key><string>com.paroneto.gyroflowauto</string>
+  <key>CFBundleExecutable</key><string>GyroflowAuto</string>
+  <key>CFBundleIconFile</key><string>applet</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>2.0</string>
+  <key>CFBundleVersion</key><string>2.0</string>
+  <key>LSMinimumSystemVersion</key><string>11.0</string>
+  <key>NSHighResolutionCapable</key><true/>
+  <key>NSRemovableVolumesUsageDescription</key><string>Para ler os vídeos do cartão de memória da GoPro / DJI O4 Pro.</string>
+</dict></plist>
+PL
 rm -rf "$DESK/Gyroflow Auto.app"
-mv "$T/Gyroflow Auto.app" "$DESK/"
+mv "$B" "$DESK/"
 rm -rf "$T"
 touch "$DESK/Gyroflow Auto.app"
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$DESK/Gyroflow Auto.app" 2>/dev/null || true
 echo "✅ App criado: Área de Trabalho > Gyroflow Auto"
 
 echo
 echo "=============================================="
 echo " PRONTO! Abrindo o Gyroflow Auto…"
-echo " • Ícone no Dock com bolinha = ligado"
+echo " • Painel aberto (ou ícone no Dock) = ligado"
 echo " • Plugue o cartão da GoPro ou da O4 Pro"
 echo " • Para desligar: feche o app (⌘Q)"
 echo " • Na 1ª vez, aceite o acesso a volumes removíveis"

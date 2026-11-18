@@ -18,7 +18,7 @@ Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
 
 # 2) arquivos do app (config e histórico ficam)
 New-Item -ItemType Directory -Force -Path $App, $Bin, (Join-Path $App 'luts') | Out-Null
-Get-ChildItem $Src -File | Where-Object { $_.Extension -in '.py', '.pyw', '.ico' } | Copy-Item -Destination $App -Force
+Get-ChildItem $Src -File | Where-Object { $_.Extension -in '.py', '.pyw', '.ico', '.png' } | Copy-Item -Destination $App -Force
 Copy-Item (Join-Path $Src 'luts\*.cube') (Join-Path $App 'luts') -Force
 Write-Host "OK  Arquivos copiados para: $App"
 

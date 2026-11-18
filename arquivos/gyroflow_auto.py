@@ -100,8 +100,43 @@ def notify(title, msg, sound=None):
     log(f"[notificação] {title}: {msg}")
 
 
+def panel_alive():
+    """O painel grava painel.alive a cada 2 s enquanto está aberto."""
+    try:
+        return time.time() - (APP_DIR / "painel.alive").stat().st_mtime < 8
+    except OSError:
+        return False
+
+
 def ask_event_name(default, card_desc):
-    return P.ask_event_name(default, card_desc)
+    """Com o painel aberto, a pergunta aparece nele (bonita e na frente). Sem painel, usa a janela do sistema."""
+    if not panel_alive():
+        return P.ask_event_name(default, card_desc)
+    qid = f"{time.time():.6f}"
+    q, a = APP_DIR / "pergunta.json", APP_DIR / "resposta.json"
+    a.unlink(missing_ok=True)
+    save_json(q, {"id": qid, "padrao": default, "desc": card_desc, "segundos": 90})
+    t0 = time.time()
+    try:
+        while time.time() - t0 < 110:
+            time.sleep(0.5)
+            try:
+                r = json.loads(a.read_text(encoding="utf-8"))
+            except Exception:
+                if time.time() - t0 > 15 and not panel_alive():
+                    return P.ask_event_name(default, card_desc)  # painel fechou no meio
+                continue
+            if r.get("id") != qid:
+                continue
+            nome = (r.get("nome") or "").strip()
+            if nome == "__IGNORAR__":
+                return None
+            nome = re.sub(r'[/:\\*?"<>|]', "-", nome).strip()
+            return nome or default
+        return default
+    finally:
+        q.unlink(missing_ok=True)
+        a.unlink(missing_ok=True)
 
 
 # ---------------------------------------------------------------- probing
@@ -238,13 +273,21 @@ def run_gyroflow(src: Path, cfg, info, out_dir: Path, out_name: str):
         cmd += ["-b", str(cfg["dispositivo_gpu"])]
     timeout = max(900, info["duration"] * 10)
     t0 = time.time()
-    P.write_status("renderizando", out_name)
+    P.write_status("renderizando", out_name, pct=0, eta=0, decorrido=0, fila=WORKER_STATE.get("fila", 0),
+                   evento=out_dir.name, suavidade=cfg.get("suavidade_pct"))
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace",
                             **P.popen_group_kwargs())
     error = None
     last = ""
+    last_st = 0.0
     for line in proc.stdout:
         last = line.strip() or last
+        m = re.search(r"Rendering progress: (\d+)/(\d+) frames \(([\d.]+)%\)(?: ETA ([\d.]+)s)?", line)
+        if m and time.time() - last_st > 1:
+            last_st = time.time()
+            P.write_status("renderizando", out_name, pct=float(m.group(3)), eta=float(m.group(4) or 0),
+                           decorrido=round(time.time() - t0), fila=WORKER_STATE.get("fila", 0),
+                           evento=out_dir.name, suavidade=cfg.get("suavidade_pct"))
         # O Gyroflow trava em vez de sair quando dá erro: detecta e mata
         if re.search(r"\[ERROR\] \[[0-9a-f]{8}\] Error", line) or "Unable to read the video file" in line:
             error = line.strip()
@@ -284,12 +327,40 @@ class Worker:
         self.active = 0
         self.done_event = threading.Event()
         self.errors = 0
+        self.queued = 0  # vídeos na fila (incluindo o que está renderizando)
+        self.did_any = False
+        self.last_event = ""
+
+    def hold(self):
+        """Cartão sendo copiado: não avisa "Tudo pronto" antes de a cópia acabar."""
+        with self.lock:
+            self.active += 1
+
+    def release(self, event_name=None):
+        with self.lock:
+            self.active -= 1
+            if event_name:
+                self.last_event = event_name
+            self._maybe_done()
+
+    def _maybe_done(self):
+        WORKER_STATE["fila"] = max(0, self.queued)
+        if self.active == 0:
+            P.write_status("ligado")
+            if self.errors:
+                notify("Terminou com erro", f"{self.errors} vídeo(s) falharam — veja o log", sound="Basso")
+            elif self.did_any:
+                notify("Tudo pronto", f"Estabilizados em {self.last_event}", sound="Glass")
+            self.errors = 0
+            self.did_any = False
 
     def submit(self, job, cfg, event_dir: Path, reg):
         if self.sem is None:
             self.sem = threading.Semaphore(max(1, int(cfg["renders_em_paralelo"])))
         with self.lock:
             self.active += 1
+            self.queued += 1
+            WORKER_STATE["fila"] = self.queued
         t = threading.Thread(target=self._run, args=(job, cfg, event_dir, reg), daemon=True)
         t.start()
 
@@ -297,6 +368,7 @@ class Worker:
         with self.sem:
             try:
                 process_cached_job(job, cfg, event_dir, reg)
+                self.did_any = True
             except Exception as e:
                 self.errors += 1
                 log(f"ERRO em {job['parts'][0].name}: {e}\n{traceback.format_exc()}")
@@ -307,15 +379,13 @@ class Worker:
                         INFLIGHT.discard(k)
                 with self.lock:
                     self.active -= 1
-                    if self.active == 0:
-                        if self.errors:
-                            notify("Terminou com erro", f"{self.errors} vídeo(s) falharam — veja o log", sound="Basso")
-                        else:
-                            notify("Tudo pronto", f"Estabilizados em {event_dir.name}", sound="Glass")
-                        self.errors = 0
+                    self.queued -= 1
+                    self.last_event = event_dir.name
+                    self._maybe_done()
 
 
 reg_lock = threading.Lock()
+WORKER_STATE = {"fila": 0}
 INFLIGHT = set()  # arquivos já na fila/cache (evita duplicar se o cartão remontar)
 
 
@@ -531,6 +601,14 @@ def handle_card(vol: Path, worker: Worker, refazer=False):
     copy_all_first = free > total * 2 + cfg["folga_disco_gb"] * 1e9  # bruto + render
     nomes = ", ".join(sorted({n for n, _ in plan}))
     notify(nomes, f"Copiando {len(all_jobs)} vídeo(s) ({total / 1e9:.1f} GB) para o cache…")
+    worker.hold()
+    try:
+        _copy_and_queue(plan, all_jobs, cfg, reg, worker, copy_all_first, nomes)
+    finally:
+        worker.release(plan[-1][0])
+
+
+def _copy_and_queue(plan, all_jobs, cfg, reg, worker, copy_all_first, nomes):
 
     n = 0
     for event, sess in plan:
@@ -556,11 +634,14 @@ def handle_card(vol: Path, worker: Worker, refazer=False):
                         INFLIGHT.discard(k)
                 continue
             log(f"  copiado [{n}/{len(all_jobs)}] {', '.join(p.name for p in job['parts'])} -> {event}")
+            if not WORKER_STATE.get("fila"):
+                P.write_status("copiando", f"{n}/{len(all_jobs)} · {job['parts'][0].name}", evento=event)
             if copy_all_first:
                 worker.submit(job, cfg, event_dir, reg)
             else:
                 try:  # pouco espaço: processa um por vez
                     process_cached_job(job, cfg, event_dir, reg)
+                    worker.did_any = True
                 except Exception as e:
                     log(f"ERRO: {e}")
                     notify("Erro ao estabilizar", f"{job['parts'][0].name}: {e}", sound="Basso")

@@ -13,7 +13,8 @@ O QUE ELE FAZ
   4. salva em  Área de Trabalho / <Nome do Evento> /  e apaga o cache
   5. lembra o que já foi feito — plugou de novo, não refaz
 - Só pergunta o nome do evento quando é um evento NOVO (pela data/hora
-  das gravações). Se ninguém responder em 90 s, usa "Evento DD-MM-AAAA".
+  das gravações) — a pergunta aparece no painel. Se ninguém responder
+  em 90 s, usa "Evento DD-MM-AAAA".
 - Mantém Log 10-bit, range, data de gravação e metadados da câmera.
 
 ANTES DE INSTALAR
@@ -35,12 +36,13 @@ ANTES DE INSTALAR
 3. Na primeira vez, aceite quando o Mac pedir acesso a volumes removíveis.
 
 Uso no Mac:
-- Ícone no Dock com bolinha = LIGADO.
-- Clique no ícone do Dock > Opções… : suavidade 30%, 60% (padrão) ou 80% e aplicar COR.
-- Trocou a suavidade e quer refazer um cartão que já foi feito? Deixe o cartão
-  plugado > Opções… > "Refazer o cartão plugado com a suavidade atual".
-  Os novos saem como *_stabilized_60.mp4, ao lado dos antigos.
-- Para desligar: feche o app (⌘Q ou botão direito no Dock > Encerrar).
+- O app abre um PAINEL: mostra se está ligado, o vídeo que está estabilizando
+  (com % e quanto falta), o último evento e tudo o que aconteceu.
+- Suavidade: 30%, 60% (padrão) ou 80% — clique direto no painel.
+- "Refazer cartão plugado": refaz o cartão com a suavidade atual
+  (os novos saem como *_stabilized_60.mp4, ao lado dos antigos).
+- "Aplicar cor numa pasta…": cor sob demanda (veja COR abaixo).
+- Fechar a janela deixa ligado no Dock. Para desligar: ⌘Q ou botão "Desligar".
 
 ----------------------------------------------------------
  WINDOWS
@@ -55,15 +57,15 @@ Uso no Mac:
 4. Aparece o atalho "Gyroflow Auto" na Área de Trabalho e no Menu Iniciar.
 
 Uso no Windows:
-- Janela do Gyroflow Auto aberta = LIGADO (pode minimizar).
-- Botões: Suavidade (cada clique troca: 30/60/80%), Aplicar COR numa pasta, Refazer cartão
-  (refaz o cartão plugado com a suavidade atual), Abrir Área de Trabalho.
-- Para desligar: feche a janela.
+- O mesmo painel do Mac: estado, progresso do vídeo, último evento e atividade.
+- Suavidade 30% / 60% (padrão) / 80%, "Refazer cartão plugado" e
+  "Aplicar cor numa pasta…" direto no painel.
+- Janela aberta = LIGADO (pode minimizar). Para desligar: feche a janela.
 
 ----------------------------------------------------------
  COR (só quando VOCÊ pede — nunca automático)
 ----------------------------------------------------------
-Opções > "Aplicar COR numa pasta…" > escolha a pasta do evento.
+No painel: "Aplicar cor numa pasta…" > escolha a pasta do evento.
 Cria ao lado de cada vídeo um  *_stabilized_COR.mp4  com:
 - O4 Pro:  D-Log M → Rec709  +  look FUJI CLÁSSICO (Paroneto) a 50%
 - GoPro :  GoPro Log → Rec709 +  look FUJI CLÁSSICO (Paroneto) a 50%
@@ -72,7 +74,7 @@ O arquivo em Log continua lá, intacto.
 ----------------------------------------------------------
  DICAS / PROBLEMAS
 ----------------------------------------------------------
-- Não feche o app enquanto estiver estabilizando (ele avisa).
+- Não desligue enquanto estiver estabilizando (ele avisa).
 - Se der erro, veja o log:
     Mac:     ~/Library/Logs/GyroflowAuto.log
     Windows: %LOCALAPPDATA%\GyroflowAuto\GyroflowAuto.log
