@@ -173,14 +173,26 @@ def apply_color(src: Path, cfg):
 def main(args):
     cfg = ga.load_json(ga.CONFIG_FILE, ga.DEFAULT_CONFIG)
     files = []
+    # *_stabilized.mp4 e também *_stabilized_60.mp4 / _80 (refeitos com outra suavidade)
+    pat = re.compile(re.escape(cfg["sufixo"]) + r"(_\d+)?\.mp4$", re.I)
     for a in args:
         p = Path(a)
         if p.is_dir():
-            files += sorted(f for f in p.iterdir() if f.name.endswith(cfg["sufixo"] + ".mp4"))
+            achados = {}
+            for f in p.iterdir():
+                m = pat.search(f.name)
+                if not m or f.name.startswith("."):
+                    continue
+                base = f.name[:m.start()]
+                # mesmo clipe em várias suavidades: usa só a versão mais nova
+                if base not in achados or f.stat().st_mtime > achados[base].stat().st_mtime:
+                    achados[base] = f
+            files += sorted(achados.values())
         elif p.is_file():
             files.append(p)
     if not files:
-        ga.notify("Cor", "Nenhum vídeo estabilizado encontrado nessa pasta.")
+        ga.log(f"Cor: nenhum vídeo *{cfg['sufixo']}*.mp4 em {', '.join(args)}")
+        ga.notify("Cor", f"Nenhum vídeo estabilizado encontrado em {Path(args[0]).name if args else 'nessa pasta'}.")
         return
     ga.log(f"=== Cor sob demanda: {len(files)} vídeo(s) — look {cfg.get('lut_look')} {cfg['look_pct']}% ===")
     ga.notify("Aplicando cor", f"{len(files)} vídeo(s) — {cfg['look_pct']}% de look")
