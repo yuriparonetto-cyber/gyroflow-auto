@@ -244,6 +244,70 @@ lbl_pct.pack(side="left")
 lbl_eta = V.label(prow, "", 12, MUTED)
 lbl_eta.pack(side="right")
 
+# ---- COR (só aparece enquanto está aplicando cor) ----
+cor_card = V.Card(wrap, pad=20, radius=20)
+cb = cor_card.body
+crow = tk.Frame(cb, bg=SURF)
+crow.pack(fill="x")
+cor_pill = tk.Canvas(crow, width=12, height=12, bg=SURF, highlightthickness=0)
+cor_pill.pack(side="left", padx=(0, 8))
+cor_pill.create_oval(2, 2, 11, 11, fill=WARN, outline="")
+V.caps(crow, "Aplicando cor", color=WARN).pack(side="left")
+lbl_cor_n = V.label(crow, "", 11, DIM)
+lbl_cor_n.pack(side="right")
+lbl_cor_arq = V.label(cb, "", 15, TEXT, "bold")
+lbl_cor_arq.pack(anchor="w", pady=(10, 0))
+cor_prog = V.Progress(cb, height=8)
+cor_prog.pack(fill="x", pady=(12, 6))
+crow2 = tk.Frame(cb, bg=SURF)
+crow2.pack(fill="x")
+lbl_cor_pct = V.label(crow2, "", 13, TEXT, "bold")
+lbl_cor_pct.pack(side="left")
+lbl_cor_eta = V.label(crow2, "", 12, MUTED)
+lbl_cor_eta.pack(side="right")
+cor_visivel = {"v": False}
+
+
+def crescer(dh):
+    """Aumenta/diminui a janela para o card da cor não espremer a atividade."""
+    if root.state() != "normal" or not dh:
+        return 0
+    w, h, y = root.winfo_width(), root.winfo_height(), root.winfo_y()
+    novo = max(700, min(h + dh, root.winfo_screenheight() - y - 40))
+    root.geometry(f"{w}x{novo}")
+    return novo - h
+
+
+def cor_info():
+    try:
+        d = json.loads((P.APP_DIR / "cor_status.json").read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return d if d.get("ativo") and P.pid_alive(d.get("pid")) else None
+
+
+def atualizar_cor():
+    d = cor_info()
+    if not d:
+        if cor_visivel["v"]:
+            cor_card.pack_forget()
+            cor_visivel["v"] = False
+            crescer(-cor_visivel.get("extra", 0))
+        return
+    if not cor_visivel["v"]:
+        cor_card.pack(fill="x", pady=(16, 0), before=grid)
+        cor_visivel["v"] = True
+        root.update_idletasks()
+        cor_visivel["extra"] = crescer(cor_card.winfo_reqheight() + 16)
+    pct = float(d.get("pct") or 0)
+    lbl_cor_n.config(text=f"{d.get('i', 1)} de {d.get('n', 1)}  ·  {d.get('pasta', '')}")
+    lbl_cor_arq.config(text=d.get("arquivo", ""))
+    cor_prog.set(pct)
+    lbl_cor_pct.config(text=f"{pct:.0f}%")
+    eta = d.get("eta") or 0
+    lbl_cor_eta.config(text=(f"faltam {tempo(eta)}" if eta else "calculando…") + f"   ·   rodando há {tempo(d.get('decorrido'))}")
+
+
 # ---- cards de info ----
 grid = tk.Frame(wrap, bg=BG)
 grid.pack(fill="x", pady=16)
@@ -458,6 +522,7 @@ def atualizar():
     lbl_ev.config(text=cfg_get("ultimo_evento") or "—")
     lbl_n.config(text=str(total_estabilizados()))
     seg.set(int(cfg_get("suavidade_pct", 60) or 60))
+    atualizar_cor()
     atualizar_log()
 
 

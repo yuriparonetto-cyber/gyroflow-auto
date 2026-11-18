@@ -5,7 +5,7 @@ Aplica: LUT de conversão (D-Log M ou GoPro Log -> Rec709) + LUT de look a X% (p
 Os dois LUTs são "assados" num LUT único para renderizar mais rápido.
 Uso: python3 cor.py <pasta_ou_arquivo> [...]
 """
-import json, os, re, subprocess, sys, shutil, hashlib, time
+import json, os, re, subprocess, sys, shutil, hashlib, tempfile, time
 from datetime import datetime
 from pathlib import Path
 
@@ -125,7 +125,21 @@ def conv_for(name, cfg):
     return None
 
 
-def apply_color(src: Path, cfg):
+COR_STATUS = P.APP_DIR / "cor_status.json"
+
+
+def cor_status(**d):
+    """Progresso da cor para o painel."""
+    try:
+        d.update(pid=os.getpid(), t=time.time())
+        tmp = P.APP_DIR / f"cor_status.{os.getpid()}.tmp"
+        tmp.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, COR_STATUS)
+    except Exception:
+        pass
+
+
+def apply_color(src: Path, cfg, idx=1, total=1):
     out = src.with_name(src.stem + cfg["sufixo_cor"] + ".mp4")
     if out.exists():
         ga.log(f"  cor já existe: {out.name}")
@@ -152,17 +166,35 @@ def apply_color(src: Path, cfg):
     enc = pick_encoder(cfg)
     hw = ["-hwaccel", "videotoolbox"] if P.IS_MAC else ["-hwaccel", "auto"]
     rate = ["-b:v", f"{mbps}M"] if enc["nome"] != "libx265" else ["-crf", "16"]
-    cmd = [FFMPEG, "-v", "error", "-y"] + hw + ["-i", str(src), "-filter_complex", g,
+    cmd = [FFMPEG, "-v", "error", "-nostats", "-progress", "pipe:1", "-y"] + hw + ["-i", str(src), "-filter_complex", g,
            "-map", "[v]", "-map", "0:a?", "-c:a", "copy", "-map_metadata", "0",
            "-c:v", enc["nome"]] + [a for a in enc["args"] if a not in ("-pix_fmt", "p010le", "yuv420p10le")] + rate + ["-tag:v", "hvc1",
            "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709", "-color_range", "tv",
            "-movflags", "+faststart+use_metadata_tags", "-metadata", f"comment=LUT {conv.stem} + {cfg.get('lut_look')} {cfg['look_pct']}%",
            str(tmp)]
     t0 = time.time()
-    p = subprocess.run(cmd, cwd=str(LUT_DIR), capture_output=True, text=True, errors="replace")
+    st = dict(ativo=True, arquivo=out.name, pasta=src.parent.name, i=idx, n=total, pct=0.0, eta=0, decorrido=0)
+    cor_status(**st)
+    errf = tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace")
+    p = subprocess.Popen(cmd, cwd=str(LUT_DIR), stdout=subprocess.PIPE, stderr=errf, text=True, errors="replace")
+    last = 0.0
+    for line in p.stdout:  # -progress: out_time_us=… a cada ~0,5 s
+        if line.startswith("out_time_us=") and dur > 0 and time.time() - last > 1:
+            try:
+                feito = int(line.split("=", 1)[1]) / 1e6
+            except ValueError:
+                continue
+            last = time.time()
+            el = last - t0
+            pct = max(0.0, min(100.0, feito / dur * 100))
+            st.update(pct=pct, decorrido=round(el), eta=round(el / pct * (100 - pct)) if pct > 1 else 0)
+            cor_status(**st)
+    p.wait()
     if p.returncode != 0 or not tmp.exists():
         tmp.unlink(missing_ok=True)
-        raise RuntimeError(p.stderr[-300:])
+        errf.seek(0)
+        raise RuntimeError(errf.read()[-300:])
+    errf.close()
     os.replace(tmp, out)
     s = src.stat()
     P.set_file_dates(out, getattr(s, "st_birthtime", s.st_mtime), s.st_mtime)
@@ -197,13 +229,16 @@ def main(args):
     ga.log(f"=== Cor sob demanda: {len(files)} vídeo(s) — look {cfg.get('lut_look')} {cfg['look_pct']}% ===")
     ga.notify("Aplicando cor", f"{len(files)} vídeo(s) — {cfg['look_pct']}% de look")
     ok = err = 0
-    for f in files:
-        try:
-            if apply_color(f, cfg):
-                ok += 1
-        except Exception as e:
-            err += 1
-            ga.log(f"ERRO cor {f.name}: {e}")
+    try:
+        for i, f in enumerate(files, 1):
+            try:
+                if apply_color(f, cfg, i, len(files)):
+                    ok += 1
+            except Exception as e:
+                err += 1
+                ga.log(f"ERRO cor {f.name}: {e}")
+    finally:
+        COR_STATUS.unlink(missing_ok=True)
     if err:
         ga.notify("Cor terminou com erro", f"{ok} ok, {err} falharam — veja o log", sound="Basso")
     else:
