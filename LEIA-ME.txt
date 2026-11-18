@@ -19,7 +19,7 @@ O QUE ELE FAZ
 ANTES DE INSTALAR
 - Tenha o GYROFLOW instalado:  https://gyroflow.xyz/download
 - Abra o Gyroflow uma vez e deixe o seu preset padrão do jeito que gosta
-  (o Gyroflow Auto usa a suavização desse preset; padrão do app = 30%).
+  (o Gyroflow Auto usa a suavização desse preset; padrão do app = 60%).
 - Internet ligada na instalação (ela baixa Python, ffmpeg e mp4_merge
   sozinha, ~100–150 MB). Não precisa instalar mais nada.
 
@@ -36,10 +36,10 @@ ANTES DE INSTALAR
 
 Uso no Mac:
 - Ícone no Dock com bolinha = LIGADO.
-- Clique no ícone do Dock > Opções… : suavidade 30%/50% e aplicar COR.
+- Clique no ícone do Dock > Opções… : suavidade 30%, 60% (padrão) ou 80% e aplicar COR.
 - Trocou a suavidade e quer refazer um cartão que já foi feito? Deixe o cartão
   plugado > Opções… > "Refazer o cartão plugado com a suavidade atual".
-  Os novos saem como *_stabilized_50.mp4, ao lado dos antigos.
+  Os novos saem como *_stabilized_60.mp4, ao lado dos antigos.
 - Para desligar: feche o app (⌘Q ou botão direito no Dock > Encerrar).
 
 ----------------------------------------------------------
@@ -56,7 +56,7 @@ Uso no Mac:
 
 Uso no Windows:
 - Janela do Gyroflow Auto aberta = LIGADO (pode minimizar).
-- Botões: Suavidade 30%/50%, Aplicar COR numa pasta, Refazer cartão
+- Botões: Suavidade (cada clique troca: 30/60/80%), Aplicar COR numa pasta, Refazer cartão
   (refaz o cartão plugado com a suavidade atual), Abrir Área de Trabalho.
 - Para desligar: feche a janela.
 

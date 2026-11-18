@@ -47,8 +47,8 @@ DEFAULT_CONFIG = {
     "horas_novo_evento": 10,
     "eventos": [],
     "dispositivo_gpu": None,
-    # suavidade do Gyroflow em %: 30 (padrão) ou 50 — muda pelo app
-    "suavidade_pct": 30,
+    # suavidade do Gyroflow em %: 30, 60 (padrão) ou 80 — muda pelo app
+    "suavidade_pct": 60,
     # COR: só roda quando você pede pelo app (nunca automático)
     "lut_o4": "dlogm_rec709.cube",
     "lut_gopro": "gplog_rec709.cube",
@@ -412,7 +412,7 @@ def process_cached_job(job, cfg, event_dir: Path, reg):
     with reg_lock:
         for k in job["keys"]:
             reg[k] = {"saida": str(final), "data": datetime.now().isoformat(timespec="seconds"),
-                      "suavidade": int(cfg.get("suavidade_pct") or 30)}
+                      "suavidade": int(cfg.get("suavidade_pct") or 60)}
         save_json(REGISTRY_FILE, reg)
     shutil.rmtree(jobdir, ignore_errors=True)  # apaga o bruto do cache
     log(f"  OK -> {final}")
@@ -437,7 +437,7 @@ def save_events(cfg):
 
 def handle_card(vol: Path, worker: Worker, refazer=False):
     cfg = load_json(CONFIG_FILE, DEFAULT_CONFIG)
-    pct = int(cfg.get("suavidade_pct") or 30)
+    pct = int(cfg.get("suavidade_pct") or 60)
     vname = P.volume_label(vol)
     reg = load_json(REGISTRY_FILE, {})
     vids = scan_card(vol)
@@ -479,7 +479,7 @@ def handle_card(vol: Path, worker: Worker, refazer=False):
         raise
     for job in jobs:
         if refazer:
-            job["sufixo_extra"] = f"_{pct}"  # ex.: _stabilized_50.mp4, ao lado do anterior
+            job["sufixo_extra"] = f"_{pct}"  # ex.: _stabilized_60.mp4, ao lado do anterior
         job["meta"] = read_source_meta(job["parts"][0])  # infos do arquivo no cartão
         job["t"] = job["meta"]["birth"]
     jobs.sort(key=lambda j: j["t"])

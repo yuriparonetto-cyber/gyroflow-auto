@@ -25,7 +25,7 @@ on idle
 end idle
 
 on getSmooth()
-	return do shell script "__PYTHON__ -c \"import json,os;p=os.path.expanduser('~/Library/Application Support/GyroflowAuto/config.json');print(json.load(open(p)).get('suavidade_pct',30) if os.path.exists(p) else 30)\""
+	return do shell script "__PYTHON__ -c \"import json,os;p=os.path.expanduser('~/Library/Application Support/GyroflowAuto/config.json');print(json.load(open(p)).get('suavidade_pct',60) if os.path.exists(p) else 60)\""
 end getSmooth
 
 on setSmooth(v)
@@ -42,7 +42,7 @@ on reopen
 	if b is "Ver log" then
 		do shell script "open -a Console ~/Library/Logs/GyroflowAuto.log"
 	else if b is "Opções…" then
-		set opts to {"Aplicar COR (LUT + Fuji 50%) numa pasta…", "Suavidade 30% (padrão)", "Suavidade 50%", "Refazer o cartão plugado com a suavidade atual (" & sm & "%)"}
+		set opts to {"Aplicar COR (LUT + Fuji 50%) numa pasta…", "Suavidade 30%", "Suavidade 60% (padrão)", "Suavidade 80%", "Refazer o cartão plugado com a suavidade atual (" & sm & "%)"}
 		set c to choose from list opts with title "Gyroflow Auto" with prompt "Suavidade atual: " & sm & "%"
 		if c is false then return
 		set c to item 1 of c
@@ -52,12 +52,13 @@ on reopen
 		else if c starts with "Refazer" then
 			do shell script "touch " & quoted form of (basePath() & "refazer.flag")
 			display notification "Refazendo o cartão plugado com " & sm & "% (salva como _stabilized_" & sm & ".mp4)." with title "Gyroflow Auto"
-		else if c starts with "Suavidade 50" then
-			setSmooth(50)
-			display notification "Suavidade: 50% nos próximos vídeos. Para refazer um cartão já feito: Opções → Refazer." with title "Gyroflow Auto"
-		else
-			setSmooth(30)
-			display notification "Suavidade: 30% nos próximos vídeos. Para refazer um cartão já feito: Opções → Refazer." with title "Gyroflow Auto"
+		else if c starts with "Suavidade" then
+			set v to "30"
+			repeat with n in {"60", "80"}
+				if c starts with ("Suavidade " & n) then set v to (n as text)
+			end repeat
+			setSmooth(v)
+			display notification "Suavidade: " & v & "% nos próximos vídeos. Para refazer um cartão já feito: Opções → Refazer." with title "Gyroflow Auto"
 		end if
 	end if
 end reopen

@@ -24,7 +24,7 @@ O instalador baixa sozinho o Python, o ffmpeg e o mp4_merge. O guia completo est
 - Estabiliza na mesma resolução e fps da gravação, em MP4 H.265 10-bit, mantendo o Log e os metadados.
 - Salva em `Área de Trabalho/<Nome do Evento>/` e lembra o que já foi feito.
 - Só pergunta o nome do evento quando o evento é novo.
-- Suavidade 30% ou 50%. Trocou e quer refazer um cartão já feito? Opções → **Refazer o cartão plugado** (só quando você pede).
+- Suavidade 30%, 60% (padrão) ou 80%. Trocou e quer refazer um cartão já feito? Opções → **Refazer o cartão plugado** (só quando você pede).
 - Cor (LUT + look FUJI CLÁSSICO 50%) **só quando você pede**.
 
 > A versão Windows ainda está em teste. Se der erro, mande o arquivo `%LOCALAPPDATA%\GyroflowAuto\GyroflowAuto.log`.

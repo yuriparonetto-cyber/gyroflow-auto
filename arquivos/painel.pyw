@@ -75,14 +75,16 @@ def aplicar_cor():
 
 
 def refazer():
-    pct = cfg_get("suavidade_pct", 30)
+    pct = cfg_get("suavidade_pct", 60)
     if messagebox.askyesno("Gyroflow Auto", f"Refazer os vídeos do cartão plugado com suavidade {pct}%?\n\n"
                            f"Os novos saem como *_stabilized_{pct}.mp4, ao lado dos que já existem."):
         (P.APP_DIR / "refazer.flag").write_text("1")
 
 
 def trocar_suavidade():
-    novo = 50 if int(cfg_get("suavidade_pct", 30)) == 30 else 30
+    ciclo = [30, 60, 80]  # cada clique passa para a próxima
+    atual = int(cfg_get("suavidade_pct", 60))
+    novo = ciclo[(ciclo.index(atual) + 1) % len(ciclo)] if atual in ciclo else 60
     cfg_set("suavidade_pct", novo)
     atualizar()
 
@@ -112,7 +114,7 @@ txt = tk.Text(root, height=12, font=("Consolas", 9), bg="#111", fg="#ddd", relie
 txt.pack(fill="both", expand=True, padx=14)
 bot = tk.Frame(root, padx=14, pady=10)
 bot.pack(fill="x")
-btn_suav = tk.Button(bot, text="Suavidade: 30%", command=trocar_suavidade, width=16)
+btn_suav = tk.Button(bot, text="Suavidade: 60%", command=trocar_suavidade, width=16)
 btn_suav.pack(side="left")
 tk.Button(bot, text="Aplicar COR numa pasta…", command=aplicar_cor).pack(side="left", padx=6)
 tk.Button(bot, text="Refazer cartão", command=refazer).pack(side="left")
@@ -134,7 +136,7 @@ def atualizar():
     elif e == "ligado":
         lbl_estado.config(text="● LIGADO — esperando cartão", fg="#1a9c3a")
         lbl_info.config(text="Plugue o cartão da GoPro ou da O4 Pro.")
-    btn_suav.config(text=f"Suavidade: {cfg_get('suavidade_pct', 30)}%")
+    btn_suav.config(text=f"Suavidade: {cfg_get('suavidade_pct', 60)}%")
     try:
         linhas = P.LOG_FILE.read_text(encoding="utf-8", errors="replace").splitlines()[-14:]
         txt.config(state="normal")
