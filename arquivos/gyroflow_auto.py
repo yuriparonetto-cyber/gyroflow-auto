@@ -23,6 +23,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 REGISTRY_FILE = APP_DIR / "estabilizados.json"
 LOG_FILE = P.LOG_FILE
 PID_FILE = APP_DIR / "gyroflow_auto.pid"
+REDO_FLAG = APP_DIR / "refazer.flag"  # criado pelo app: refazer o cartão plugado na suavidade atual
 CACHE_ROOT = P.CACHE_ROOT
 MP4_MERGE = P.tool("mp4_merge")
 FFPROBE = P.tool("ffprobe")
@@ -400,16 +401,18 @@ def process_cached_job(job, cfg, event_dir: Path, reg):
             p.unlink(missing_ok=True)  # libera espaço
         src = merged
         job["info"] = probe(merged)
-    out_name = src.stem + cfg["sufixo"] + ".mp4"
+    extra = job.get("sufixo_extra", "")
+    out_name = src.stem + cfg["sufixo"] + extra + ".mp4"
     rendered = run_gyroflow(src, cfg, job["info"], jobdir, out_name)
     restore_metadata(rendered, meta, cfg["codec"])
     final = event_dir / out_name
     if final.exists():
-        final = event_dir / (src.stem + cfg["sufixo"] + f"_{datetime.now():%H%M%S}.mp4")
+        final = event_dir / (src.stem + cfg["sufixo"] + extra + f"_{datetime.now():%H%M%S}.mp4")
     shutil.move(str(rendered), str(final))
     with reg_lock:
         for k in job["keys"]:
-            reg[k] = {"saida": str(final), "data": datetime.now().isoformat(timespec="seconds")}
+            reg[k] = {"saida": str(final), "data": datetime.now().isoformat(timespec="seconds"),
+                      "suavidade": int(cfg.get("suavidade_pct") or 30)}
         save_json(REGISTRY_FILE, reg)
     shutil.rmtree(jobdir, ignore_errors=True)  # apaga o bruto do cache
     log(f"  OK -> {final}")
@@ -424,21 +427,48 @@ def find_event(cfg, t_ini, t_fim):
     return None
 
 
-def handle_card(vol: Path, worker: Worker):
+def save_events(cfg):
+    """Grava só eventos/último evento, relendo o arquivo (não desfaz mudanças feitas pelo app, ex.: suavidade)."""
+    cur = load_json(CONFIG_FILE, DEFAULT_CONFIG)
+    cur["eventos"] = cfg.get("eventos", [])
+    cur["ultimo_evento"] = cfg.get("ultimo_evento")
+    save_json(CONFIG_FILE, cur)
+
+
+def handle_card(vol: Path, worker: Worker, refazer=False):
     cfg = load_json(CONFIG_FILE, DEFAULT_CONFIG)
+    pct = int(cfg.get("suavidade_pct") or 30)
     vname = P.volume_label(vol)
     reg = load_json(REGISTRY_FILE, {})
     vids = scan_card(vol)
     if not vids:
+        if refazer:
+            notify(vname, "Nenhum vídeo da GoPro/O4 neste cartão.")
         return
+
+    def precisa(f):
+        k = file_key(f)
+        if k in INFLIGHT:
+            return False
+        if refazer:  # só o que já foi feito com OUTRA suavidade
+            return k in reg and int(reg[k].get("suavidade", 30)) != pct
+        return k not in reg
+
     with reg_lock:
-        pending = [(c, f) for c, f in vids if file_key(f) not in reg and file_key(f) not in INFLIGHT]
+        pending = [(c, f) for c, f in vids if precisa(f)]
         for _, f in pending:
             INFLIGHT.add(file_key(f))
-    log(f"Cartão {vname}: {len(vids)} vídeos, {len(pending)} novos")
-    if not pending:
-        notify(vname, "Nada novo: tudo já foi estabilizado ou já está na fila.")
-        return
+    if refazer:
+        log(f"Cartão {vname}: refazer com suavidade {pct}% — {len(pending)} vídeo(s)")
+        if not pending:
+            notify(vname, f"Nada para refazer: os vídeos deste cartão já estão em {pct}% (ou ainda não foram estabilizados).")
+            return
+        notify(vname, f"Refazendo {len(pending)} vídeo(s) com suavidade {pct}%…")
+    else:
+        log(f"Cartão {vname}: {len(vids)} vídeos, {len(pending)} novos")
+        if not pending:
+            notify(vname, "Nada novo: tudo já foi estabilizado ou já está na fila.")
+            return
 
     try:
         jobs = group_files(pending, cfg)
@@ -448,6 +478,8 @@ def handle_card(vol: Path, worker: Worker):
                 INFLIGHT.discard(file_key(f))
         raise
     for job in jobs:
+        if refazer:
+            job["sufixo_extra"] = f"_{pct}"  # ex.: _stabilized_50.mp4, ao lado do anterior
         job["meta"] = read_source_meta(job["parts"][0])  # infos do arquivo no cartão
         job["t"] = job["meta"]["birth"]
     jobs.sort(key=lambda j: j["t"])
@@ -481,7 +513,7 @@ def handle_card(vol: Path, worker: Worker):
                 cfg.setdefault("eventos", []).append(ev)
         ev["inicio"], ev["fim"] = min(ev["inicio"], t_ini), max(ev["fim"], t_fim)
         cfg["ultimo_evento"] = ev["nome"]
-        save_json(CONFIG_FILE, cfg)
+        save_events(cfg)
         plan.append((ev["nome"], sess))
 
     # o que o usuário ignorou volta a ficar disponível para o próximo plug
@@ -567,19 +599,21 @@ def main():
     worker = Worker()
     busy = set()
 
-    def process(key, vol):
+    def process(key, vol, refazer=False):
         try:
-            handle_card(vol, worker)
+            handle_card(vol, worker, refazer)
         except Exception as e:
             log(f"ERRO no cartão {key}: {e}\n{traceback.format_exc()}")
             notify("Erro", str(e), sound="Basso")
         finally:
             busy.discard(key)
 
-    def start(key, vol):
+    def start(key, vol, refazer=False):
         if (vol / "DCIM").is_dir() and key not in busy:
             busy.add(key)
-            threading.Thread(target=process, args=(key, vol), daemon=True).start()
+            threading.Thread(target=process, args=(key, vol, refazer), daemon=True).start()
+            return True
+        return False
 
     seen = P.mounted_volumes()  # cartões já plugados quando abriu: processa também
     for k, v in sorted(seen.items()):
@@ -592,6 +626,14 @@ def main():
             time.sleep(2)  # dá tempo de montar
             start(k, now[k])
         seen = now
+        if REDO_FLAG.exists():  # pedido do app: refazer o cartão plugado com a suavidade atual
+            REDO_FLAG.unlink(missing_ok=True)
+            cards = {k: v for k, v in now.items() if (v / "DCIM").is_dir()}
+            if not cards:
+                notify("Refazer", "Plugue o cartão primeiro e peça de novo.", sound="Basso")
+            for k, v in sorted(cards.items()):
+                if not start(k, v, refazer=True):
+                    notify("Refazer", "Esse cartão ainda está sendo copiado — peça de novo quando a cópia terminar.")
 
 
 if __name__ == "__main__":

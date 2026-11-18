@@ -42,19 +42,22 @@ on reopen
 	if b is "Ver log" then
 		do shell script "open -a Console ~/Library/Logs/GyroflowAuto.log"
 	else if b is "Opções…" then
-		set opts to {"Aplicar COR (LUT + Fuji 50%) numa pasta…", "Suavidade 30% (padrão)", "Suavidade 50%"}
+		set opts to {"Aplicar COR (LUT + Fuji 50%) numa pasta…", "Suavidade 30% (padrão)", "Suavidade 50%", "Refazer o cartão plugado com a suavidade atual (" & sm & "%)"}
 		set c to choose from list opts with title "Gyroflow Auto" with prompt "Suavidade atual: " & sm & "%"
 		if c is false then return
 		set c to item 1 of c
 		if c starts with "Aplicar COR" then
 			set f to choose folder with prompt "Escolha a pasta do evento (vídeos *_stabilized.mp4):" default location (path to desktop folder)
 			do shell script "cd /tmp; /usr/bin/nohup __PYTHON__ -u " & quoted form of (basePath() & "cor.py") & " " & quoted form of (POSIX path of f) & " >>$HOME/Library/Logs/GyroflowAuto.err 2>&1 &"
+		else if c starts with "Refazer" then
+			do shell script "touch " & quoted form of (basePath() & "refazer.flag")
+			display notification "Refazendo o cartão plugado com " & sm & "% (salva como _stabilized_" & sm & ".mp4)." with title "Gyroflow Auto"
 		else if c starts with "Suavidade 50" then
 			setSmooth(50)
-			display notification "Suavidade: 50% nos próximos vídeos." with title "Gyroflow Auto"
+			display notification "Suavidade: 50% nos próximos vídeos. Para refazer um cartão já feito: Opções → Refazer." with title "Gyroflow Auto"
 		else
 			setSmooth(30)
-			display notification "Suavidade: 30% nos próximos vídeos." with title "Gyroflow Auto"
+			display notification "Suavidade: 30% nos próximos vídeos. Para refazer um cartão já feito: Opções → Refazer." with title "Gyroflow Auto"
 		end if
 	end if
 end reopen

@@ -37,6 +37,9 @@ ANTES DE INSTALAR
 Uso no Mac:
 - Ícone no Dock com bolinha = LIGADO.
 - Clique no ícone do Dock > Opções… : suavidade 30%/50% e aplicar COR.
+- Trocou a suavidade e quer refazer um cartão que já foi feito? Deixe o cartão
+  plugado > Opções… > "Refazer o cartão plugado com a suavidade atual".
+  Os novos saem como *_stabilized_50.mp4, ao lado dos antigos.
 - Para desligar: feche o app (⌘Q ou botão direito no Dock > Encerrar).
 
 ----------------------------------------------------------
@@ -53,7 +56,8 @@ Uso no Mac:
 
 Uso no Windows:
 - Janela do Gyroflow Auto aberta = LIGADO (pode minimizar).
-- Botões: Suavidade 30%/50%, Aplicar COR numa pasta, Abrir Área de Trabalho.
+- Botões: Suavidade 30%/50%, Aplicar COR numa pasta, Refazer cartão
+  (refaz o cartão plugado com a suavidade atual), Abrir Área de Trabalho.
 - Para desligar: feche a janela.
 
 ----------------------------------------------------------

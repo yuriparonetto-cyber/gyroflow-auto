@@ -74,6 +74,13 @@ def aplicar_cor():
         messagebox.showinfo("Gyroflow Auto", "Aplicando cor em segundo plano.\nAcompanhe aqui no painel.")
 
 
+def refazer():
+    pct = cfg_get("suavidade_pct", 30)
+    if messagebox.askyesno("Gyroflow Auto", f"Refazer os vídeos do cartão plugado com suavidade {pct}%?\n\n"
+                           f"Os novos saem como *_stabilized_{pct}.mp4, ao lado dos que já existem."):
+        (P.APP_DIR / "refazer.flag").write_text("1")
+
+
 def trocar_suavidade():
     novo = 50 if int(cfg_get("suavidade_pct", 30)) == 30 else 30
     cfg_set("suavidade_pct", novo)
@@ -89,7 +96,7 @@ def abrir(p):
 
 root = tk.Tk()
 root.title("Gyroflow Auto — by Paroneto")
-root.geometry("640x430")
+root.geometry("760x430")
 root.minsize(520, 360)
 try:
     root.iconbitmap(str(AQUI / "icone.ico"))
@@ -108,6 +115,7 @@ bot.pack(fill="x")
 btn_suav = tk.Button(bot, text="Suavidade: 30%", command=trocar_suavidade, width=16)
 btn_suav.pack(side="left")
 tk.Button(bot, text="Aplicar COR numa pasta…", command=aplicar_cor).pack(side="left", padx=6)
+tk.Button(bot, text="Refazer cartão", command=refazer).pack(side="left")
 tk.Button(bot, text="Abrir Área de Trabalho", command=lambda: abrir(cfg_get("pasta_destino", P.desktop_dir()))).pack(side="left")
 tk.Button(bot, text="Desligar", command=desligar, fg="#b00").pack(side="right")
 tk.Label(root, text="Janela aberta = ligado (pode minimizar). Fechar = desligar.", fg="#888").pack(pady=(0, 8))
