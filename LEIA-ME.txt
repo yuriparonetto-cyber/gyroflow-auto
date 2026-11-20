@@ -38,8 +38,11 @@ ANTES DE INSTALAR
 Uso no Mac:
 - O app abre um PAINEL: mostra se está ligado, o vídeo que está estabilizando
   (com % e quanto falta), o último evento e tudo o que aconteceu.
-- Suavidade: 30%, 60% (padrão) ou 80% — clique direto no painel.
+- Card "Estabilização" > Ajustar… : os mesmos controles do HyperSmooth do Quik —
+  Nivelamento de horizonte, Uniformidade, Velocidade de corte, Corte estático,
+  Correção de lente e Proporção de imagem (Original, 16:9, 4:3, 9:16, 1:1).
 - "Refazer cartão plugado": refaz o cartão com a suavidade atual
+  com os ajustes atuais
   (os novos saem como *_stabilized_60.mp4, ao lado dos antigos).
 - "Aplicar cor numa pasta…": cor sob demanda (veja COR abaixo).
 - Fechar a janela deixa ligado no Dock. Para desligar: ⌘Q ou botão "Desligar".
@@ -58,7 +61,7 @@ Uso no Mac:
 
 Uso no Windows:
 - O mesmo painel do Mac: estado, progresso do vídeo, último evento e atividade.
-- Suavidade 30% / 60% (padrão) / 80%, "Refazer cartão plugado" e
+- Ajustes de estabilização (estilo Quik), "Refazer cartão plugado" e
   "Aplicar cor numa pasta…" direto no painel.
 - Janela aberta = LIGADO (pode minimizar). Para desligar: feche a janela.
 

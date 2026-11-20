@@ -331,17 +331,117 @@ V.label(c_n.body, "vídeos no total", 12, MUTED).pack(anchor="w")
 
 c_s = V.Card(grid, pad=20)
 c_s.grid(row=0, column=2, sticky="nsew", padx=(8, 0))
-V.caps(c_s.body, "Suavidade").pack(anchor="w")
+V.caps(c_s.body, "Estabilização").pack(anchor="w")
+AJ_PADRAO = {"suavidade_pct": 60, "corte_vel": 50, "corte_estatico": False, "correcao_lente": 100,
+             "horizonte": False, "proporcao": "original"}
+PROPORCOES = ["original", "16:9", "4:3", "9:16", "1:1"]
 
 
-def trocar_suav(v):
-    cfg_set("suavidade_pct", v)
-    toast(f"Suavidade {v}% nos próximos vídeos")
+def aj_get():
+    return {k: cfg_get(k, v) for k, v in AJ_PADRAO.items()}
 
 
-seg = V.Segmented(c_s.body, [30, 60, 80], int(cfg_get("suavidade_pct", 60) or 60), trocar_suav, seg_w=62)
-seg.pack(anchor="w", pady=(12, 8))
-V.label(c_s.body, "padrão 60%", 11, DIM).pack(anchor="w")
+def aj_resumo():
+    a = aj_get()
+    corte = "estático" if a["corte_estatico"] else str(a["corte_vel"])
+    l1 = f"Uniformidade {a['suavidade_pct']}  ·  Corte {corte}"
+    l2 = f"Lente {a['correcao_lente']}  ·  Horizonte {'on' if a['horizonte'] else 'off'}  ·  " + \
+         ("Original" if a["proporcao"] == "original" else a["proporcao"])
+    if len(l1) > 30:
+        l1 = l1.replace("Uniformidade", "Unif.")
+    return l1, l2
+
+
+lbl_aj1 = V.label(c_s.body, "", 13, TEXT, "bold")
+lbl_aj1.pack(anchor="w", pady=(10, 0))
+lbl_aj2 = V.label(c_s.body, "", 11, MUTED, wraplength=230)
+lbl_aj2.pack(anchor="w", pady=(2, 8))
+
+
+def abrir_ajustes():
+    a = aj_get()
+    top = tk.Toplevel(root, bg=BG)
+    top.title("Estabilização")
+    top.resizable(False, False)
+    top.transient(root)
+    card = V.Card(top, pad=24, radius=20, width=470)
+    card.pack(padx=14, pady=14)
+    b = card.body
+    V.label(b, "Estabilização", 19, TEXT, "bold").pack(anchor="w")
+    V.label(b, "Vale para os próximos vídeos. Para refazer um cartão: \"Refazer cartão plugado\".", 11, DIM,
+            wraplength=420).pack(anchor="w", pady=(2, 14))
+
+    def linha_toggle(txt, val):
+        r = tk.Frame(b, bg=SURF)
+        r.pack(fill="x", pady=6)
+        V.label(r, txt, 14, TEXT).pack(side="left")
+        t = V.Toggle(r, val)
+        t.pack(side="right")
+        return t
+
+    def linha_slider(txt, val):
+        r = tk.Frame(b, bg=SURF)
+        r.pack(fill="x", pady=(10, 0))
+        V.label(r, txt, 14, TEXT).pack(side="left")
+        box = tk.Label(r, text=str(val), width=4, font=V.font(13, "bold"), fg=TEXT, bg=SURF2,
+                       highlightthickness=1, highlightbackground=LINE)
+        box.pack(side="right")
+        sl = V.Slider(b, val, lambda v: box.config(text=str(v)), width=420)
+        sl.pack(fill="x", pady=(4, 0))
+        return sl, box
+
+    t_hor = linha_toggle("Nivelamento de horizonte", a["horizonte"])
+    s_uni, b_uni = linha_slider("Uniformidade", a["suavidade_pct"])
+    s_cor, b_cor = linha_slider("Velocidade de corte", a["corte_vel"])
+    t_est = linha_toggle("Corte estático", a["corte_estatico"])
+    s_len, b_len = linha_slider("Correção de lente", a["correcao_lente"])
+
+    def estatico(on):
+        s_cor.set_enabled(not on)
+        b_cor.config(fg=DIM if on else TEXT)
+
+    t_est.command = estatico
+    estatico(a["corte_estatico"])
+    r = tk.Frame(b, bg=SURF)
+    r.pack(fill="x", pady=(16, 0))
+    V.label(r, "Proporção de imagem", 14, TEXT).pack(anchor="w")
+    seg_p = V.Segmented(b, PROPORCOES, a["proporcao"] if a["proporcao"] in PROPORCOES else "original", seg_w=80, suffix="")
+    seg_p.pack(anchor="w", pady=(8, 0))
+    V.label(b, "Original = sem corte (8:7 da GoPro, 4:3 da O4). As outras cortam o centro.", 11, DIM,
+            wraplength=420).pack(anchor="w", pady=(6, 0))
+
+    bot = tk.Frame(b, bg=SURF)
+    bot.pack(fill="x", pady=(22, 0))
+
+    def redefinir():
+        t_hor.set(AJ_PADRAO["horizonte"])
+        s_uni.set(AJ_PADRAO["suavidade_pct"]); b_uni.config(text=str(AJ_PADRAO["suavidade_pct"]))
+        s_cor.set(AJ_PADRAO["corte_vel"]); b_cor.config(text=str(AJ_PADRAO["corte_vel"]))
+        t_est.set(AJ_PADRAO["corte_estatico"]); estatico(AJ_PADRAO["corte_estatico"])
+        s_len.set(AJ_PADRAO["correcao_lente"]); b_len.config(text=str(AJ_PADRAO["correcao_lente"]))
+        seg_p.set("original")
+
+    def aplicar():
+        novo = {"horizonte": t_hor.value, "suavidade_pct": s_uni.value, "corte_vel": s_cor.value,
+                "corte_estatico": t_est.value, "correcao_lente": s_len.value, "proporcao": seg_p.value}
+        for k, v in novo.items():
+            cfg_set(k, v)
+        top.destroy()
+        atualizar()
+        toast("Ajustes salvos — valem para os próximos vídeos")
+
+    V.Button(bot, "Redefinir", redefinir, "ghost").pack(side="left")
+    V.Button(bot, "Aplicar", aplicar, "primary", padx=30).pack(side="right")
+    top.protocol("WM_DELETE_WINDOW", top.destroy)
+    top.update_idletasks()
+    x = root.winfo_rootx() + (root.winfo_width() - top.winfo_reqwidth()) // 2
+    y = root.winfo_rooty() + 60
+    top.geometry(f"+{max(0, x)}+{max(0, y)}")
+    top.grab_set()
+    top.focus_force()
+
+
+V.Button(c_s.body, "Ajustar…", abrir_ajustes, "ghost", size=12, height=32, padx=16).pack(anchor="w")
 
 # ---- ações ----
 acts = tk.Frame(wrap, bg=BG)
@@ -349,12 +449,12 @@ acts.pack(fill="x")
 
 
 def refazer():
-    pct = cfg_get("suavidade_pct", 60)
+    l1, l2 = aj_resumo()
     if confirmar("Refazer o cartão plugado?",
-                 f"Refaz com suavidade {pct}% os vídeos do cartão plugado que foram feitos com outra porcentagem.\n"
-                 f"Os novos saem como *_stabilized_{pct}.mp4, ao lado dos antigos.", f"Refazer em {pct}%"):
+                 f"Refaz os vídeos do cartão plugado que foram feitos com outros ajustes, usando os atuais:\n"
+                 f"{l1}\n{l2}\n\nOs novos saem ao lado dos antigos (ex.: *_stabilized_60.mp4).", "Refazer"):
         (P.APP_DIR / "refazer.flag").write_text("1")
-        toast(f"Refazendo o cartão em {pct}%…")
+        toast("Refazendo o cartão com os ajustes atuais…")
 
 
 def aplicar_cor():
@@ -487,7 +587,7 @@ def atualizar():
         eta = st.get("eta") or 0
         partes = [f"faltam {tempo(eta)}" if eta else "calculando…", f"rodando há {tempo(st.get('decorrido'))}"]
         if st.get("suavidade"):
-            partes.append(f"suavidade {st['suavidade']}%")
+            partes.append(f"uniformidade {st['suavidade']}")
         lbl_eta.config(text="   ·   ".join(partes))
         lbl_fila.config(text=f"{fila} na fila" if fila > 1 else "último da fila" if fila == 1 else "")
     elif e == "copiando":
@@ -521,7 +621,9 @@ def atualizar():
             lbl_sub.config(text="Plugue o cartão da GoPro ou da DJI O4 Pro — o resto é automático.")
     lbl_ev.config(text=cfg_get("ultimo_evento") or "—")
     lbl_n.config(text=str(total_estabilizados()))
-    seg.set(int(cfg_get("suavidade_pct", 60) or 60))
+    l1, l2 = aj_resumo()
+    lbl_aj1.config(text=l1)
+    lbl_aj2.config(text=l2)
     atualizar_cor()
     atualizar_log()
 
@@ -573,4 +675,6 @@ root.deiconify()
 atualizar()
 root.after(300, loop)
 root.after(50, anima)
+if os.environ.get("GFA_DEMO") == "ajustes":  # só para conferir o visual
+    root.after(1200, abrir_ajustes)
 root.mainloop()

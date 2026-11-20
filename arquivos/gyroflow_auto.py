@@ -48,7 +48,12 @@ DEFAULT_CONFIG = {
     "eventos": [],
     "dispositivo_gpu": None,
     # suavidade do Gyroflow em %: 30, 60 (padrão) ou 80 — muda pelo app
-    "suavidade_pct": 60,
+    "suavidade_pct": 60,        # Uniformidade (0–100)
+    "corte_vel": 50,            # Velocidade de corte (0–100): quão rápido o zoom dinâmico acompanha
+    "corte_estatico": False,    # Corte estático: um zoom fixo para o vídeo todo
+    "correcao_lente": 100,      # Correção de lente (0–100): 0 = mantém o olho de peixe
+    "horizonte": False,         # Nivelamento de horizonte
+    "proporcao": "original",    # original | 16:9 | 4:3 | 9:16 | 1:1
     # COR: só roda quando você pede pelo app (nunca automático)
     "lut_o4": "dlogm_rec709.cube",
     "lut_gopro": "gplog_rec709.cube",
@@ -235,7 +240,32 @@ def group_files(vids, cfg):
 
 # ---------------------------------------------------------------- processing
 
-SUAVIDADE_S = {30: 0.5, 60: 0.8, 80: 1.0}  # % do app → constante de tempo do Plain 3D (s)
+def ajustes(cfg):
+    """Os controles do painel (estilo Quik), com padrões."""
+    g = lambda k: cfg.get(k, DEFAULT_CONFIG[k])
+    return {"u": int(g("suavidade_pct")), "c": int(g("corte_vel")), "e": bool(g("corte_estatico")),
+            "l": int(g("correcao_lente")), "h": bool(g("horizonte")), "p": str(g("proporcao"))}
+
+
+def ajustes_sig(cfg):
+    a = ajustes(cfg)
+    return f"u{a['u']}-c{'E' if a['e'] else a['c']}-l{a['l']}-h{int(a['h'])}-{a['p']}"
+
+
+def tamanho_saida(w, h, prop):
+    """Proporção de imagem: recorta o centro sem aumentar a resolução."""
+    if prop in (None, "", "original"):
+        return w, h
+    try:
+        a, b = (float(x) for x in prop.split(":"))
+    except ValueError:
+        return w, h
+    r = a / b
+    if w / h > r:
+        w = h * r
+    else:
+        h = w / r
+    return int(w) // 4 * 4, int(h) // 4 * 4
 
 
 def gopro_readout_ms(path: Path):
@@ -293,10 +323,16 @@ def build_preset(cfg, info, out_dir: Path, out_name: str, src: Path = None):
     # suavização "Plain 3D" (constante). O "Default" do Gyroflow muda a força conforme a velocidade do giro
     # e isso dá trancos no yaw quando você orbita alguém (medido: -25 a -30% de tranco nas órbitas com Plain 3D).
     # Faixa boa medida: 0,5 a 1,0 s (acima de ~1,2 s os trancos voltam em órbita rápida).
-    pct = int(cfg.get("suavidade_pct") or 60)
-    tc = SUAVIDADE_S.get(pct) or min(1.0, max(0.5, pct / 80.0))
+    a = ajustes(cfg)
+    tc = 0.3 + 0.7 * max(0, min(100, a["u"])) / 100.0   # Uniformidade 0–100 → 0,3–1,0 s
     stab["method"] = "Plain 3D"
-    stab["smoothing_params"] = [{"name": "time_constant", "value": tc}, {"name": "trim_range_only", "value": 1}]
+    stab["smoothing_params"] = [{"name": "time_constant", "value": round(tc, 3)}, {"name": "trim_range_only", "value": 1}]
+    # Corte: estático = zoom fixo (-1); senão janela do zoom dinâmico 10 s (lento) → 0,5 s (rápido)
+    stab["adaptive_zoom_window"] = -1 if a["e"] else round(0.5 + 9.5 * (1 - max(0, min(100, a["c"])) / 100.0), 2)
+    stab["lens_correction_amount"] = max(0, min(100, a["l"])) / 100.0
+    stab["horizon_lock_amount"] = 100 if a["h"] else 0
+    stab["horizon_lock_roll"] = 0
+    ow, oh = tamanho_saida(info["width"], info["height"], a["p"])
     mbps = info["bitrate"] / 1_000_000 if info["bitrate"] else 100
     mbps = int(min(max(round(mbps), 40), 200))
     out = {
@@ -304,7 +340,7 @@ def build_preset(cfg, info, out_dir: Path, out_name: str, src: Path = None):
         "audio": bool(cfg["audio"] and info["has_audio"]), "audio_codec": "AAC",
         "interpolation": cfg["interpolacao"],
         "output_folder": P.output_folder_url(out_dir), "output_filename": out_name,
-        "output_width": info["width"], "output_height": info["height"],
+        "output_width": ow, "output_height": oh,
         "preserve_other_tracks": False, "pad_with_black": False, "export_trims_separately": False,
         "keyframe_distance": 1, "encoder_options": "",
     }
@@ -353,7 +389,7 @@ def run_gyroflow(src: Path, cfg, info, out_dir: Path, out_name: str):
     out = out_dir / out_name
     if proc.returncode != 0 or not out.exists() or out.stat().st_size < 1000:
         raise RuntimeError(f"Gyroflow saiu com código {proc.returncode}: {last}")
-    log(f"  render ok (suavidade {cfg.get('suavidade_pct')}%): {out_name} em {time.time() - t0:.0f}s ({info['duration']:.0f}s de vídeo)")
+    log(f"  render ok (suavidade {cfg.get('suavidade_pct')}% · {ajustes_sig(cfg)}): {out_name} em {time.time() - t0:.0f}s ({info['duration']:.0f}s de vídeo)")
     return out
 
 
@@ -530,7 +566,7 @@ def process_cached_job(job, cfg, event_dir: Path, reg):
     with reg_lock:
         for k in job["keys"]:
             reg[k] = {"saida": str(final), "data": datetime.now().isoformat(timespec="seconds"),
-                      "suavidade": int(cfg.get("suavidade_pct") or 60)}
+                      "suavidade": int(cfg.get("suavidade_pct") or 60), "ajustes": ajustes_sig(cfg)}
         save_json(REGISTRY_FILE, reg)
     shutil.rmtree(jobdir, ignore_errors=True)  # apaga o bruto do cache
     log(f"  OK -> {final}")
@@ -556,6 +592,7 @@ def save_events(cfg):
 def handle_card(vol: Path, worker: Worker, refazer=False):
     cfg = load_json(CONFIG_FILE, DEFAULT_CONFIG)
     pct = int(cfg.get("suavidade_pct") or 60)
+    sig = ajustes_sig(cfg)
     vname = P.volume_label(vol)
     reg = load_json(REGISTRY_FILE, {})
     vids = scan_card(vol)
@@ -569,7 +606,7 @@ def handle_card(vol: Path, worker: Worker, refazer=False):
         if k in INFLIGHT:
             return False
         if refazer:  # só o que já foi feito com OUTRA suavidade
-            return k in reg and int(reg[k].get("suavidade", 30)) != pct
+            return k in reg and reg[k].get("ajustes") != sig
         return k not in reg
 
     with reg_lock:
@@ -577,11 +614,11 @@ def handle_card(vol: Path, worker: Worker, refazer=False):
         for _, f in pending:
             INFLIGHT.add(file_key(f))
     if refazer:
-        log(f"Cartão {vname}: refazer com suavidade {pct}% — {len(pending)} vídeo(s)")
+        log(f"Cartão {vname}: refazer com os ajustes atuais ({sig}) — {len(pending)} vídeo(s)")
         if not pending:
-            notify(vname, f"Nada para refazer: os vídeos deste cartão já estão em {pct}% (ou ainda não foram estabilizados).")
+            notify(vname, "Nada para refazer: os vídeos deste cartão já estão com os ajustes atuais (ou ainda não foram estabilizados).")
             return
-        notify(vname, f"Refazendo {len(pending)} vídeo(s) com suavidade {pct}%…")
+        notify(vname, f"Refazendo {len(pending)} vídeo(s) com os ajustes atuais…")
     else:
         log(f"Cartão {vname}: {len(vids)} vídeos, {len(pending)} novos")
         if not pending:
@@ -597,7 +634,8 @@ def handle_card(vol: Path, worker: Worker, refazer=False):
         raise
     for job in jobs:
         if refazer:
-            job["sufixo_extra"] = f"_{pct}"  # ex.: _stabilized_60.mp4, ao lado do anterior
+            prop = ajustes(cfg)["p"]
+            job["sufixo_extra"] = f"_{pct}" + ("" if prop == "original" else "_" + prop.replace(":", "x"))  # ex.: _stabilized_60.mp4, ao lado do anterior
         job["meta"] = read_source_meta(job["parts"][0])  # infos do arquivo no cartão
         job["t"] = job["meta"]["birth"]
     jobs.sort(key=lambda j: j["t"])

@@ -202,7 +202,7 @@ class Segmented(tk.Canvas):
                 self.create_oval(x1 + self.seg_w - 2 * r - 1, 4, x1 + self.seg_w - 1, self.h - 4, fill=c2, outline=c2)
             elif self.hover == i:
                 rrect(self, x1, 4, x1 + self.seg_w, self.h - 4, (self.h - 8) / 2, fill=mix(SURF2, "#ffffff", 0.06), outline="")
-            self.create_text(x1 + self.seg_w / 2, self.h / 2, text=f"{o}{self.suffix}",
+            self.create_text(x1 + self.seg_w / 2, self.h / 2, text=(o.capitalize() if isinstance(o, str) else f"{o}{self.suffix}"),
                              fill="#ffffff" if sel else MUTED, font=font(13, "bold" if sel else "normal"))
 
 
@@ -369,3 +369,82 @@ def ask_event(root, padrao, desc, segundos=90, on_answer=None, bring_front=None)
     top.after(150, lambda: (top.focus_force(), e.focus_set(), e.select_range(0, "end")))
     tick()
     return top
+
+
+class Slider(tk.Canvas):
+    """Controle deslizante 0–100 com trilho em gradiente (estilo Quik)."""
+
+    def __init__(self, parent, value=50, command=None, bg=SURF, width=300, height=28):
+        super().__init__(parent, width=width, height=height, bg=bg, highlightthickness=0, bd=0, cursor="hand2")
+        self.value, self.command, self.h, self.enabled = int(value), command, height, True
+        self.bind("<Button-1>", self._drag)
+        self.bind("<B1-Motion>", self._drag)
+        self.bind("<Configure>", lambda e: self.draw())
+
+    def _drag(self, e):
+        if not self.enabled:
+            return
+        w = self.winfo_width()
+        v = int(round(max(0, min(1, (e.x - 12) / max(1, w - 24))) * 100))
+        if v != self.value:
+            self.value = v
+            self.draw()
+            if self.command:
+                self.command(v)
+
+    def set(self, v):
+        self.value = int(v)
+        self.draw()
+
+    def set_enabled(self, on):
+        self.enabled = on
+        self.configure(cursor="hand2" if on else "arrow")
+        self.draw()
+
+    def draw(self):
+        w, h = self.winfo_width(), self.h
+        if w < 30:
+            w = int(self.cget("width"))
+        self.delete("all")
+        y1, y2 = h / 2 - 3, h / 2 + 3
+        rrect(self, 12, y1, w - 12, y2, 3, fill=SURF2, outline="")
+        x = 12 + (w - 24) * self.value / 100
+        c2 = mix(ACC1, ACC2, self.value / 100)
+        if self.enabled and x > 15:
+            hgrad(self, 12, y1, x, y2, ACC1, c2)
+        elif x > 15:
+            self.create_rectangle(12, y1, x, y2, fill=DIM, outline="")
+        r = 10
+        self.create_oval(x - r, h / 2 - r + 1, x + r, h / 2 + r + 1, fill=mix(BG, "#000000", 0.5), outline="")
+        self.create_oval(x - r, h / 2 - r, x + r, h / 2 + r, fill="#ffffff" if self.enabled else MUTED, outline="")
+
+
+class Toggle(tk.Canvas):
+    """Chave liga/desliga (estilo iOS)."""
+
+    def __init__(self, parent, value=False, command=None, bg=SURF):
+        super().__init__(parent, width=48, height=28, bg=bg, highlightthickness=0, bd=0, cursor="hand2")
+        self.value, self.command = bool(value), command
+        self.bind("<Button-1>", self._click)
+        self.draw()
+
+    def _click(self, e):
+        self.value = not self.value
+        self.draw()
+        if self.command:
+            self.command(self.value)
+
+    def set(self, v):
+        self.value = bool(v)
+        self.draw()
+
+    def draw(self):
+        self.delete("all")
+        if self.value:
+            hgrad(self, 13, 2, 35, 26, ACC1, mix(ACC1, ACC2, 0.8))
+            self.create_oval(1, 2, 25, 26, fill=ACC1, outline=ACC1)
+            self.create_oval(23, 2, 47, 26, fill=mix(ACC1, ACC2, 0.8), outline=mix(ACC1, ACC2, 0.8))
+            self.create_oval(25, 4, 45, 24, fill="#ffffff", outline="")
+        else:
+            rrect(self, 1, 2, 47, 26, 12, fill=SURF2, outline=LINE)
+            self.create_oval(4, 5, 22, 23, fill=MUTED, outline="")
