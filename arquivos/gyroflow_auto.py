@@ -54,6 +54,7 @@ DEFAULT_CONFIG = {
     "correcao_lente": 100,      # Correção de lente (0–100): 0 = mantém o olho de peixe
     "horizonte": False,         # Nivelamento de horizonte
     "proporcao": "original",    # original | 16:9 | 4:3 | 9:16 | 1:1
+    "refazer_antigos": False,   # ao plugar, refaz sozinho o que foi feito com a estabilização antiga (antes de 20/11/2026)
     # COR: só roda quando você pede pelo app (nunca automático)
     "lut_o4": "dlogm_rec709.cube",
     "lut_gopro": "gplog_rec709.cube",
@@ -605,7 +606,9 @@ def handle_card(vol: Path, worker: Worker, refazer=False):
         k = file_key(f)
         if k in INFLIGHT:
             return False
-        if refazer:  # só o que já foi feito com OUTRA suavidade
+        if refazer == "antigos":  # só o que foi feito com a estabilização antiga (lente/suavização erradas)
+            return k in reg and not reg[k].get("ajustes")
+        if refazer:  # só o que já foi feito com outros ajustes
             return k in reg and reg[k].get("ajustes") != sig
         return k not in reg
 
@@ -622,6 +625,11 @@ def handle_card(vol: Path, worker: Worker, refazer=False):
     else:
         log(f"Cartão {vname}: {len(vids)} vídeos, {len(pending)} novos")
         if not pending:
+            antigos = [f for _, f in vids if file_key(f) in reg and not reg[file_key(f)].get("ajustes")
+                       and file_key(f) not in INFLIGHT]
+            if cfg.get("refazer_antigos") and antigos:
+                log(f"  {len(antigos)} arquivo(s) feitos com a estabilização antiga — refazendo sozinho")
+                return handle_card(vol, worker, refazer="antigos")
             notify(vname, "Nada novo: tudo já foi estabilizado ou já está na fila.")
             return
 
