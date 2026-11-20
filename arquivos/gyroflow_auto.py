@@ -10,7 +10,7 @@ Fica rodando em segundo plano. Quando um cartão (GoPro / DJI O4 Pro) é plugado
   6. registra o arquivo para nunca estabilizar de novo
 Funciona no Mac e no Windows (diferenças ficam em plataforma.py).
 """
-import json, os, re, shutil, signal, subprocess, sys, threading, time, traceback
+import json, os, re, shutil, signal, struct, subprocess, sys, threading, time, traceback
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -235,7 +235,45 @@ def group_files(vids, cfg):
 
 # ---------------------------------------------------------------- processing
 
-def build_preset(cfg, info, out_dir: Path, out_name: str):
+SUAVIDADE_S = {30: 0.5, 60: 0.8, 80: 1.0}  # % do app → constante de tempo do Plain 3D (s)
+
+
+def gopro_readout_ms(path: Path):
+    """Tempo de leitura do sensor (rolling shutter) que a GoPro grava no cabeçalho (GPMF 'SROT', em ms).
+    Lê só o bloco 'moov' do MP4 (alguns MB), não o arquivo todo."""
+    try:
+        with open(path, "rb") as f:
+            size = path.stat().st_size
+            pos = 0
+            while pos + 8 <= size:
+                f.seek(pos)
+                hdr = f.read(16)
+                n, kind = struct.unpack(">I4s", hdr[:8])
+                head = 8
+                if n == 1:
+                    n = struct.unpack(">Q", hdr[8:16])[0]
+                    head = 16
+                elif n == 0:
+                    n = size - pos
+                if n < head:
+                    return None
+                if kind == b"moov":
+                    if n > 200 * 1024 * 1024:
+                        return None
+                    f.seek(pos + head)
+                    moov = f.read(n - head)
+                    i = moov.find(b"SROT")
+                    if i >= 0 and moov[i + 4:i + 5] == b"f":
+                        v = struct.unpack(">f", moov[i + 8:i + 12])[0]
+                        return float(v) if 1.0 <= v <= 60.0 else None
+                    return None
+                pos += n
+    except Exception:
+        return None
+    return None
+
+
+def build_preset(cfg, info, out_dir: Path, out_name: str, src: Path = None):
     stab = {}
     try:
         pre = P.gyro_default_preset()
@@ -244,11 +282,21 @@ def build_preset(cfg, info, out_dir: Path, out_name: str):
                 stab = json.load(f).get("stabilization", {}) or {}
     except Exception:
         stab = {}
-    pct = cfg.get("suavidade_pct")
-    if pct and stab.get("smoothing_params"):
-        for sp in stab["smoothing_params"]:
-            if sp.get("name") == "smoothness":
-                sp["value"] = float(pct) / 100.0
+    # rolling shutter: nunca força 0 (o padrão salvo do Gyroflow fazia isso e gerava gelatina).
+    # GoPro: usa o valor gravado pela própria câmera; outras: deixa o Gyroflow decidir pelo perfil da lente.
+    for k in ("frame_readout_time", "frame_readout_direction"):
+        stab.pop(k, None)
+    ro = gopro_readout_ms(src) if src is not None and re.match(r"^(G[XHLP]|GOPR)", src.name, re.I) else None
+    if ro:
+        stab["frame_readout_time"] = ro
+        stab["frame_readout_direction"] = "TopToBottom"
+    # suavização "Plain 3D" (constante). O "Default" do Gyroflow muda a força conforme a velocidade do giro
+    # e isso dá trancos no yaw quando você orbita alguém (medido: -25 a -30% de tranco nas órbitas com Plain 3D).
+    # Faixa boa medida: 0,5 a 1,0 s (acima de ~1,2 s os trancos voltam em órbita rápida).
+    pct = int(cfg.get("suavidade_pct") or 60)
+    tc = SUAVIDADE_S.get(pct) or min(1.0, max(0.5, pct / 80.0))
+    stab["method"] = "Plain 3D"
+    stab["smoothing_params"] = [{"name": "time_constant", "value": tc}, {"name": "trim_range_only", "value": 1}]
     mbps = info["bitrate"] / 1_000_000 if info["bitrate"] else 100
     mbps = int(min(max(round(mbps), 40), 200))
     out = {
@@ -267,7 +315,7 @@ def build_preset(cfg, info, out_dir: Path, out_name: str):
 
 
 def run_gyroflow(src: Path, cfg, info, out_dir: Path, out_name: str):
-    preset, params = build_preset(cfg, info, out_dir, out_name)
+    preset, params = build_preset(cfg, info, out_dir, out_name, src)
     cmd = [GYROFLOW, str(src), "-f", "--stdout-progress", "--preset", preset, "-p", params]
     if cfg.get("dispositivo_gpu") is not None:
         cmd += ["-b", str(cfg["dispositivo_gpu"])]
