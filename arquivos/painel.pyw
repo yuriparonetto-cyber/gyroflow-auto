@@ -228,7 +228,7 @@ hb = hero.body
 hrow = tk.Frame(hb, bg=SURF)
 hrow.pack(fill="x")
 V.caps(hrow, "Agora").pack(side="left")
-lbl_fila = V.label(hrow, "", 11, DIM)
+lbl_fila = V.label(hrow, "", 11, ACC2, cursor="hand2")
 lbl_fila.pack(side="right")
 lbl_titulo = V.label(hb, "Ligando…", 26, TEXT, "bold")
 lbl_titulo.pack(anchor="w", pady=(10, 2))
@@ -316,11 +316,18 @@ for i in range(3):
 
 c_ev = V.Card(grid, pad=20)
 c_ev.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
-V.caps(c_ev.body, "Último evento").pack(anchor="w")
+cap_ev = V.caps(c_ev.body, "Último evento")
+cap_ev.pack(anchor="w")
 lbl_ev = V.label(c_ev.body, "—", 17, TEXT, "bold", wraplength=230)
-lbl_ev.pack(anchor="w", pady=(10, 6))
-lnk_ev = V.label(c_ev.body, "Abrir pasta  →", 12, ACC2, cursor="hand2")
-lnk_ev.pack(anchor="w")
+lbl_ev.pack(anchor="w", pady=(8, 2))
+ev_links = tk.Frame(c_ev.body, bg=SURF)
+ev_links.pack(anchor="w", pady=(0, 10))
+lnk_ev = V.label(ev_links, "Abrir pasta  →", 12, ACC2, cursor="hand2")
+lnk_ev.pack(side="left")
+lnk_auto = V.label(ev_links, "", 12, WARN, cursor="hand2")
+lnk_auto.pack(side="left", padx=(12, 0))
+ev_btns = tk.Frame(c_ev.body, bg=SURF)
+ev_btns.pack(anchor="w")
 
 c_n = V.Card(grid, pad=20)
 c_n.grid(row=0, column=1, sticky="nsew", padx=8)
@@ -457,6 +464,111 @@ def refazer():
         toast("Refazendo o cartão com os ajustes atuais…")
 
 
+def refazer_pasta():
+    pasta = filedialog.askdirectory(parent=root, title="Pasta com os brutos (ex.: <Evento>/BRUTOS)",
+                                    initialdir=str(cfg_get("pasta_destino", P.desktop_dir())))
+    if not pasta:
+        return
+    l1, l2 = aj_resumo()
+    if confirmar("Refazer a partir desta pasta?",
+                 f"{Path(pasta).name}\n\nEstabiliza os brutos desta pasta que ainda não estão com os ajustes atuais:\n"
+                 f"{l1}\n{l2}", "Refazer"):
+        (P.APP_DIR / "refazer.flag").write_text(json.dumps({"pasta": pasta}, ensure_ascii=False), encoding="utf-8")
+        toast("Refazendo a partir da pasta…")
+
+
+def ler_fila():
+    try:
+        return json.loads((P.APP_DIR / "fila.json").read_text(encoding="utf-8")) if motor_vivo() else []
+    except Exception:
+        return []
+
+
+def pedir_remocao(jid):
+    f = P.APP_DIR / "remover.json"
+    try:
+        ids = json.loads(f.read_text(encoding="utf-8"))
+    except Exception:
+        ids = []
+    if jid not in ids:
+        ids.append(jid)
+    tmp = P.APP_DIR / "remover.tmp"
+    tmp.write_text(json.dumps(ids), encoding="utf-8")
+    os.replace(tmp, f)
+
+
+COR_ESTADO = {"estabilizando": BLUE, "juntando": ACC2, "copiando": ACC2, "na fila": MUTED,
+              "aguardando cópia": DIM, "removendo": ERR}
+janela_fila = {"top": None}
+
+
+def abrir_fila():
+    if janela_fila["top"] is not None and janela_fila["top"].winfo_exists():
+        janela_fila["top"].lift()
+        return
+    top = tk.Toplevel(root, bg=BG)
+    janela_fila["top"] = top
+    top.title("Fila")
+    top.transient(root)
+    top.minsize(560, 300)
+    card = V.Card(top, pad=22, radius=20, width=600, stretch=True, height=420)
+    card.pack(fill="both", expand=True, padx=14, pady=14)
+    b = card.body
+    cab = tk.Frame(b, bg=SURF)
+    cab.pack(fill="x")
+    V.label(cab, "Fila", 19, TEXT, "bold").pack(side="left")
+    lbl_qtd = V.label(cab, "", 12, MUTED)
+    lbl_qtd.pack(side="right")
+    V.label(b, "Remover tira o vídeo da fila (e para o render, se for o atual). Ele não volta ao plugar o cartão de novo.",
+            11, DIM, wraplength=540).pack(anchor="w", pady=(4, 12))
+    lista = tk.Frame(b, bg=SURF)
+    lista.pack(fill="both", expand=True)
+    estado = {"sig": None}
+
+    def remover(item):
+        if item.get("estado") == "estabilizando" and not confirmar(
+                "Parar este render?", f"{item.get('nome')}\n\nEle está sendo estabilizado agora. Parar e tirar da fila?",
+                "Parar e remover", "Continuar", perigo=True):
+            return
+        pedir_remocao(item["id"])
+        toast(f"Removendo {item.get('nome')}…")
+
+    def redesenha():
+        if not top.winfo_exists():
+            return
+        itens = ler_fila()
+        sig = json.dumps([(i["id"], i.get("estado")) for i in itens])
+        if sig != estado["sig"]:
+            estado["sig"] = sig
+            for w in lista.winfo_children():
+                w.destroy()
+            lbl_qtd.config(text=f"{len(itens)} vídeo(s)" if itens else "")
+            if not itens:
+                V.label(lista, "Nada na fila agora.", 14, MUTED).pack(anchor="w", pady=20)
+            for it in itens:
+                row = tk.Frame(lista, bg=SURF2, highlightthickness=1, highlightbackground=LINE)
+                row.pack(fill="x", pady=4)
+                inner = tk.Frame(row, bg=SURF2)
+                inner.pack(fill="x", padx=14, pady=10)
+                esq = tk.Frame(inner, bg=SURF2)
+                esq.pack(side="left", fill="x", expand=True)
+                V.label(esq, it.get("nome", ""), 13, TEXT, "bold", bg=SURF2).pack(anchor="w")
+                cor = COR_ESTADO.get(it.get("estado"), MUTED)
+                sub = tk.Frame(esq, bg=SURF2)
+                sub.pack(anchor="w")
+                V.label(sub, "● " + (it.get("estado") or ""), 11, cor, bg=SURF2).pack(side="left")
+                V.label(sub, f"   {it.get('evento', '')}  ·  {it.get('gb', '')} GB", 11, MUTED, bg=SURF2).pack(side="left")
+                if it.get("estado") != "removendo":
+                    V.Button(inner, "Remover", lambda i=it: remover(i), "danger", size=11, height=30, padx=14,
+                             bg=SURF2).pack(side="right")
+        top.after(1000, redesenha)
+
+    redesenha()
+    top.update_idletasks()
+    x = root.winfo_rootx() + (root.winfo_width() - 640) // 2
+    top.geometry(f"640x480+{max(0, x)}+{root.winfo_rooty() + 80}")
+
+
 def aplicar_cor():
     pasta = filedialog.askdirectory(parent=root, title="Escolha a pasta do evento (vídeos *_stabilized.mp4)",
                                     initialdir=str(cfg_get("pasta_destino", P.desktop_dir())))
@@ -466,11 +578,80 @@ def aplicar_cor():
         toast("Aplicando cor em segundo plano…")
 
 
+def pasta_do_evento(nome):
+    for e in cfg_get("eventos", []) or []:
+        if e.get("nome") == nome and e.get("pasta"):
+            return Path(e["pasta"])
+    return Path(cfg_get("pasta_destino", str(P.desktop_dir()))) / nome
+
+
 def abrir_evento():
-    ev = cfg_get("ultimo_evento")
-    base = Path(cfg_get("pasta_destino", str(P.desktop_dir())))
-    alvo = base / ev if ev and (base / ev).is_dir() else base
-    P.open_path(alvo)
+    fixo = cfg_get("evento_fixo")
+    nome = fixo.get("nome") if isinstance(fixo, dict) else cfg_get("ultimo_evento")
+    if isinstance(fixo, dict) and fixo.get("pasta"):
+        alvo = Path(fixo["pasta"])
+    elif nome:
+        alvo = pasta_do_evento(nome)
+    else:
+        alvo = Path(cfg_get("pasta_destino", str(P.desktop_dir())))
+    P.open_path(alvo if alvo.is_dir() else alvo.parent)
+
+
+def fixar_destino(nome, pasta):
+    cfg_set("evento_fixo", {"nome": nome, "pasta": str(pasta)})
+    Path(pasta).mkdir(parents=True, exist_ok=True)
+    atualizar()
+    toast(f"Próximos cartões vão para: {nome}")
+
+
+def novo_evento():
+    res = {"v": None}
+    top = tk.Toplevel(root, bg=BG)
+    top.title("Novo evento")
+    top.resizable(False, False)
+    top.transient(root)
+    c = V.Card(top, pad=26, radius=20, width=500)
+    c.pack(padx=14, pady=14)
+    V.label(c.body, "Novo evento", 19, TEXT, "bold").pack(anchor="w")
+    V.label(c.body, "Cria a pasta na Área de Trabalho. Os próximos cartões vão direto para ela, sem perguntar.",
+            12, MUTED, wraplength=440).pack(anchor="w", pady=(4, 14))
+    box, e = V.entry(c.body, "", 16)
+    box.pack(fill="x")
+    row = tk.Frame(c.body, bg=SURF)
+    row.pack(fill="x", pady=(18, 0))
+
+    def ok(*_):
+        nome = re.sub(r'[/:\\*?"<>|]', "-", e.get()).strip()
+        if nome:
+            res["v"] = nome
+            top.destroy()
+
+    V.Button(row, "Cancelar", top.destroy, "ghost").pack(side="left")
+    V.Button(row, "Criar evento", ok, "primary", padx=24).pack(side="right")
+    e.bind("<Return>", ok)
+    top.update_idletasks()
+    top.geometry(f"+{root.winfo_rootx() + (root.winfo_width() - top.winfo_reqwidth()) // 2}+{root.winfo_rooty() + 120}")
+    top.grab_set()
+    top.after(100, e.focus_set)
+    root.wait_window(top)
+    if res["v"]:
+        fixar_destino(res["v"], Path(cfg_get("pasta_destino", str(P.desktop_dir()))) / res["v"])
+
+
+def pasta_antiga():
+    pasta = filedialog.askdirectory(parent=root, title="Escolha a pasta do evento (os próximos cartões vão para ela)",
+                                    initialdir=str(cfg_get("pasta_destino", P.desktop_dir())))
+    if pasta:
+        p = Path(pasta)
+        if p.name.upper() == str(cfg_get("pasta_brutos", "BRUTOS")).upper():
+            p = p.parent  # escolheu a BRUTOS: usa o evento
+        fixar_destino(p.name, p)
+
+
+def voltar_automatico():
+    cfg_set("evento_fixo", None)
+    atualizar()
+    toast("Destino automático: pela data das gravações")
 
 
 def ver_log():
@@ -481,11 +662,18 @@ def ver_log():
 
 
 lnk_ev.bind("<Button-1>", lambda e: abrir_evento())
+lnk_auto.bind("<Button-1>", lambda e: voltar_automatico())
+V.Button(ev_btns, "Novo evento", novo_evento, "primary", size=12, height=32, padx=14).pack(side="left")
+V.Button(ev_btns, "Pasta antiga…", pasta_antiga, "ghost", size=12, height=32, padx=12).pack(side="left", padx=(8, 0))
 V.Button(acts, "Refazer cartão plugado", refazer, "primary", bg=BG).pack(side="left")
-V.Button(acts, "Aplicar cor numa pasta…", aplicar_cor, "ghost", bg=BG).pack(side="left", padx=10)
-V.Button(acts, "Ver log", ver_log, "ghost", bg=BG).pack(side="left")
-lbl_toast = V.label(acts, "", 12, OK, bg=BG)
-lbl_toast.pack(side="right")
+V.Button(acts, "Refazer de uma pasta…", refazer_pasta, "ghost", bg=BG).pack(side="left", padx=(10, 0))
+V.Button(acts, "Aplicar cor…", aplicar_cor, "ghost", bg=BG).pack(side="left", padx=10)
+btn_fila = V.Button(acts, "Fila", abrir_fila, "ghost", bg=BG, width=96)
+btn_fila.pack(side="left")
+V.Button(acts, "Log", ver_log, "ghost", bg=BG).pack(side="left", padx=(10, 0))
+lbl_toast = V.label(wrap, "", 12, OK, bg=BG)
+lbl_toast.pack(anchor="e", pady=(6, 0))
+lbl_fila.bind("<Button-1>", lambda e: abrir_fila())
 
 
 def toast(msg):
@@ -619,8 +807,18 @@ def atualizar():
             pill.set("LIGADO", OK, pulse=True)
             lbl_titulo.config(text="Esperando cartão")
             lbl_sub.config(text="Plugue o cartão da GoPro ou da DJI O4 Pro — o resto é automático.")
-    lbl_ev.config(text=cfg_get("ultimo_evento") or "—")
+    fixo = cfg_get("evento_fixo")
+    if isinstance(fixo, dict) and fixo.get("nome"):
+        cap_ev.config(text=" ".join("PRÓXIMOS CARTÕES →"), fg=ACC2)
+        lbl_ev.config(text=fixo["nome"])
+        lnk_auto.config(text="↺ Automático")
+    else:
+        cap_ev.config(text=" ".join("ÚLTIMO EVENTO"), fg=DIM)
+        lbl_ev.config(text=cfg_get("ultimo_evento") or "—")
+        lnk_auto.config(text="")
     lbl_n.config(text=str(total_estabilizados()))
+    nfila = len(ler_fila())
+    btn_fila.set_text(f"Fila ({nfila})" if nfila else "Fila")
     l1, l2 = aj_resumo()
     lbl_aj1.config(text=l1)
     lbl_aj2.config(text=l2)
@@ -651,7 +849,7 @@ def ver_pergunta():
 def anima():
     pill.tick()
     prog.tick()
-    root.after(50, anima)
+    root.after(70, anima)
 
 
 def loop():
@@ -667,6 +865,12 @@ def loop():
 
 
 P.APP_DIR.mkdir(parents=True, exist_ok=True)
+# pede já a permissão do macOS para a pasta de destino (Área de Trabalho), com o app na frente —
+# senão o motor trava esperando essa permissão na hora de ler/salvar os vídeos
+try:
+    os.listdir(cfg_get("pasta_destino", str(P.desktop_dir())))
+except Exception:
+    pass
 ligar_motor()
 root.update_idletasks()
 W, H = 940, min(860, root.winfo_screenheight() - 80)
@@ -675,6 +879,7 @@ root.deiconify()
 atualizar()
 root.after(300, loop)
 root.after(50, anima)
-if os.environ.get("GFA_DEMO") == "ajustes":  # só para conferir o visual
-    root.after(1200, abrir_ajustes)
+_demo = {"ajustes": lambda: abrir_ajustes(), "fila": lambda: abrir_fila(), "evento": lambda: novo_evento()}
+if os.environ.get("GFA_DEMO") in _demo:  # só para conferir o visual
+    root.after(1200, _demo[os.environ["GFA_DEMO"]])
 root.mainloop()

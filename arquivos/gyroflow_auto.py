@@ -54,7 +54,10 @@ DEFAULT_CONFIG = {
     "correcao_lente": 100,      # Correção de lente (0–100): 0 = mantém o olho de peixe
     "horizonte": False,         # Nivelamento de horizonte
     "proporcao": "original",    # original | 16:9 | 4:3 | 9:16 | 1:1
-    "refazer_antigos": False,   # ao plugar, refaz sozinho o que foi feito com a estabilização antiga (antes de 20/11/2026)
+    "refazer_antigos": False,
+    "guardar_brutos": True,     # move os brutos para <Evento>/BRUTOS em vez de apagar (dá para refazer sem o cartão)
+    "pasta_brutos": "BRUTOS",
+    "evento_fixo": None,        # {"nome", "pasta"}: os próximos cartões vão para esse evento (escolhido no painel)   # ao plugar, refaz sozinho o que foi feito com a estabilização antiga (antes de 20/11/2026)
     # COR: só roda quando você pede pelo app (nunca automático)
     "lut_o4": "dlogm_rec709.cube",
     "lut_gopro": "gplog_rec709.cube",
@@ -181,12 +184,14 @@ def file_key(p: Path):
 
 def scan_card(vol: Path):
     dcim = vol / "DCIM"
-    if not dcim.is_dir():
+    if dcim.is_dir():
+        pastas = [d for d in sorted(dcim.iterdir()) if d.is_dir()]
+    elif vol.is_dir():  # pasta comum (ex.: <Evento>/BRUTOS): ela e as subpastas
+        pastas = [vol] + [d for d in sorted(vol.iterdir()) if d.is_dir() and not d.name.startswith(".")]
+    else:
         return []
     vids = []
-    for sub in sorted(dcim.iterdir()):
-        if not sub.is_dir():
-            continue
+    for sub in pastas:
         for f in sorted(sub.iterdir()):
             if f.name.startswith("._") or not f.is_file():
                 continue
@@ -351,7 +356,7 @@ def build_preset(cfg, info, out_dir: Path, out_name: str, src: Path = None):
     return json.dumps(preset), json.dumps({k: out[k] for k in ("output_folder", "output_filename", "output_width", "output_height")})
 
 
-def run_gyroflow(src: Path, cfg, info, out_dir: Path, out_name: str):
+def run_gyroflow(src: Path, cfg, info, out_dir: Path, out_name: str, jid=None):
     preset, params = build_preset(cfg, info, out_dir, out_name, src)
     cmd = [GYROFLOW, str(src), "-f", "--stdout-progress", "--preset", preset, "-p", params]
     if cfg.get("dispositivo_gpu") is not None:
@@ -362,6 +367,8 @@ def run_gyroflow(src: Path, cfg, info, out_dir: Path, out_name: str):
                    evento=out_dir.name, suavidade=cfg.get("suavidade_pct"))
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace",
                             **P.popen_group_kwargs())
+    if jid:
+        RUNNING[jid] = proc
     error = None
     last = ""
     last_st = 0.0
@@ -380,6 +387,13 @@ def run_gyroflow(src: Path, cfg, info, out_dir: Path, out_name: str):
         if time.time() - t0 > timeout:
             error = "timeout"
             break
+    if jid:
+        RUNNING.pop(jid, None)
+    if jid in CANCEL:
+        P.kill_tree(proc)
+        proc.wait()
+        P.write_status("ligado")
+        raise Cancelado()
     if error:
         P.kill_tree(proc)
         proc.wait()
@@ -395,6 +409,13 @@ def run_gyroflow(src: Path, cfg, info, out_dir: Path, out_name: str):
 
 
 def copy_verified(src: Path, dst: Path):
+    # mesmo disco (ex.: refazer a partir da pasta BRUTOS): link instantâneo em vez de copiar
+    try:
+        if src.stat().st_dev == dst.parent.stat().st_dev:
+            os.link(src, dst)
+            return
+    except OSError:
+        pass
     tmp = dst.with_suffix(dst.suffix + ".part")
     shutil.copy2(src, tmp)  # copia preservando datas
     if tmp.stat().st_size != src.stat().st_size:
@@ -452,8 +473,12 @@ class Worker:
     def _run(self, job, cfg, event_dir, reg):
         with self.sem:
             try:
+                if job.get("id") in CANCEL:
+                    raise Cancelado()
                 process_cached_job(job, cfg, event_dir, reg)
                 self.did_any = True
+            except Cancelado:
+                marcar_ignorado(job, reg)
             except Exception as e:
                 self.errors += 1
                 log(f"ERRO em {job['parts'][0].name}: {e}\n{traceback.format_exc()}")
@@ -462,6 +487,7 @@ class Worker:
                 with reg_lock:
                     for k in job.get("keys", []):
                         INFLIGHT.discard(k)
+                fila_del(job.get("id"))
                 with self.lock:
                     self.active -= 1
                     self.queued -= 1
@@ -471,6 +497,69 @@ class Worker:
 
 reg_lock = threading.Lock()
 WORKER_STATE = {"fila": 0}
+
+# ---- fila visível no painel (fila.json) e pedidos de remoção (remover.json)
+FILA_FILE = APP_DIR / "fila.json"
+REMOVER_FILE = APP_DIR / "remover.json"
+FILA = {}            # id -> {nome, evento, estado, t, partes}
+CANCEL = set()       # ids que o usuário tirou da fila
+RUNNING = {}         # id -> processo do Gyroflow em andamento
+fila_lock = threading.Lock()
+
+
+def fila_set(jid, **kw):
+    with fila_lock:
+        FILA.setdefault(jid, {"id": jid, "t": time.time()}).update(kw)
+        _fila_write()
+
+
+def fila_del(jid):
+    with fila_lock:
+        FILA.pop(jid, None)
+        _fila_write()
+
+
+def _fila_write():
+    try:
+        tmp = APP_DIR / f"fila.{os.getpid()}.tmp"
+        tmp.write_text(json.dumps(sorted(FILA.values(), key=lambda x: x["t"]), ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, FILA_FILE)
+    except Exception:
+        pass
+
+
+def ler_remocoes():
+    """O painel pede para tirar vídeos da fila: marca e, se estiver renderizando, para o Gyroflow."""
+    if not REMOVER_FILE.exists():
+        return
+    try:
+        ids = json.loads(REMOVER_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        ids = []
+    REMOVER_FILE.unlink(missing_ok=True)
+    for jid in ids:
+        CANCEL.add(jid)
+        fila_set(jid, estado="removendo")
+        proc = RUNNING.get(jid)
+        if proc and proc.poll() is None:
+            P.kill_tree(proc)
+
+
+class Cancelado(Exception):
+    pass
+
+
+def marcar_ignorado(job, reg, motivo="removido da fila"):
+    """Removido pelo usuário: não volta na próxima vez que plugar o cartão."""
+    with reg_lock:
+        for k in job.get("keys", []):
+            reg[k] = {"ignorado": True, "motivo": motivo, "data": datetime.now().isoformat(timespec="seconds")}
+            INFLIGHT.discard(k)
+        save_json(REGISTRY_FILE, reg)
+    if job.get("cache"):
+        shutil.rmtree(job["cache"][0].parent, ignore_errors=True)
+    fila_del(job.get("id"))
+    log(f"  removido da fila: {', '.join(p.name for p in job['parts'])}")
 INFLIGHT = set()  # arquivos já na fila/cache (evita duplicar se o cartão remontar)
 
 
@@ -545,32 +634,65 @@ def process_cached_job(job, cfg, event_dir: Path, reg):
     jobdir = cache_files[0].parent
     src = cache_files[0]
     meta = job.get("meta") or read_source_meta(src)
+    jid = job.get("id")
+    guardar = bool(cfg.get("guardar_brutos", True))
     if len(cache_files) > 1:
         merged = jobdir / (src.stem + "_JUNTO.MP4")
+        fila_set(jid, estado="juntando")
         log(f"  juntando {len(cache_files)} partes -> {merged.name}")
         r = subprocess.run([str(MP4_MERGE)] + [str(p) for p in cache_files] + ["--out", str(merged)],
                            capture_output=True, text=True, errors="replace")
         if r.returncode != 0 or not merged.exists():
             raise RuntimeError(f"mp4_merge falhou: {r.stdout[-300:]} {r.stderr[-300:]}")
-        for p in cache_files:
-            p.unlink(missing_ok=True)  # libera espaço
+        if not guardar:
+            for p in cache_files:
+                p.unlink(missing_ok=True)  # libera espaço
         src = merged
         job["info"] = probe(merged)
     extra = job.get("sufixo_extra", "")
     out_name = src.stem + cfg["sufixo"] + extra + ".mp4"
-    rendered = run_gyroflow(src, cfg, job["info"], jobdir, out_name)
+    if jid in CANCEL:
+        raise Cancelado()
+    fila_set(jid, estado="estabilizando")
+    rendered = run_gyroflow(src, cfg, job["info"], jobdir, out_name, jid)
     restore_metadata(rendered, meta, cfg["codec"])
     final = event_dir / out_name
     if final.exists():
         final = event_dir / (src.stem + cfg["sufixo"] + extra + f"_{datetime.now():%H%M%S}.mp4")
     shutil.move(str(rendered), str(final))
+    brutos = []
+    if guardar:  # guarda os brutos em <Evento>/BRUTOS (mesmo disco: mover é instantâneo)
+        bdir = event_dir / cfg.get("pasta_brutos", "BRUTOS")
+        bdir.mkdir(parents=True, exist_ok=True)
+        for c in cache_files:
+            if not c.exists():
+                continue
+            dst = bdir / c.name
+            try:
+                if dst.exists() and dst.stat().st_size == c.stat().st_size:
+                    c.unlink()  # já estava guardado (ex.: refazer a partir da pasta BRUTOS)
+                else:
+                    shutil.move(str(c), str(dst))
+                brutos.append(str(dst))
+            except Exception as e:
+                log(f"  aviso: não consegui guardar o bruto {c.name}: {e}")
     with reg_lock:
         for k in job["keys"]:
             reg[k] = {"saida": str(final), "data": datetime.now().isoformat(timespec="seconds"),
                       "suavidade": int(cfg.get("suavidade_pct") or 60), "ajustes": ajustes_sig(cfg)}
+            if brutos:
+                reg[k]["brutos"] = brutos
         save_json(REGISTRY_FILE, reg)
-    shutil.rmtree(jobdir, ignore_errors=True)  # apaga o bruto do cache
+    shutil.rmtree(jobdir, ignore_errors=True)  # limpa o cache (o JUNTO e o que sobrou)
     log(f"  OK -> {final}")
+
+
+def event_path(cfg, nome):
+    """Pasta do evento: a que foi escolhida no painel (pasta antiga) ou <pasta_destino>/<nome>."""
+    ev = next((e for e in cfg.get("eventos", []) if e["nome"] == nome), None)
+    if ev and ev.get("pasta"):
+        return Path(ev["pasta"])
+    return Path(cfg["pasta_destino"]) / nome
 
 
 def find_event(cfg, t_ini, t_fim):
@@ -606,6 +728,10 @@ def handle_card(vol: Path, worker: Worker, refazer=False):
         k = file_key(f)
         if k in INFLIGHT:
             return False
+        if k in reg and reg[k].get("ignorado") and refazer != "pasta":
+            return False  # o usuário tirou da fila
+        if refazer == "pasta":  # refazer a partir de uma pasta: o que não está com os ajustes atuais
+            return k not in reg or reg[k].get("ajustes") != sig
         if refazer == "antigos":  # só o que foi feito com a estabilização antiga (lente/suavização erradas)
             return k in reg and not reg[k].get("ajustes")
         if refazer:  # só o que já foi feito com outros ajustes
@@ -626,7 +752,7 @@ def handle_card(vol: Path, worker: Worker, refazer=False):
         log(f"Cartão {vname}: {len(vids)} vídeos, {len(pending)} novos")
         if not pending:
             antigos = [f for _, f in vids if file_key(f) in reg and not reg[file_key(f)].get("ajustes")
-                       and file_key(f) not in INFLIGHT]
+                       and not reg[file_key(f)].get("ignorado") and file_key(f) not in INFLIGHT]
             if cfg.get("refazer_antigos") and antigos:
                 log(f"  {len(antigos)} arquivo(s) feitos com a estabilização antiga — refazendo sozinho")
                 return handle_card(vol, worker, refazer="antigos")
@@ -657,11 +783,23 @@ def handle_card(vol: Path, worker: Worker, refazer=False):
             sessions.append([job])
 
     plan = []
+    fixo = cfg.get("evento_fixo") if isinstance(cfg.get("evento_fixo"), dict) else None
     for sess in sessions:
         t_ini, t_fim = sess[0]["t"], sess[-1]["t"]
-        ev = find_event(cfg, t_ini, t_fim)
         dia = datetime.fromtimestamp(t_ini).strftime("%d/%m/%Y %H:%M")
-        if ev:
+        if fixo and fixo.get("nome"):  # escolhido no painel: "Novo evento" ou "Pasta antiga"
+            ev = next((e for e in cfg.get("eventos", []) if e["nome"] == fixo["nome"]), None)
+            if not ev:
+                ev = {"nome": fixo["nome"], "inicio": t_ini, "fim": t_fim}
+                cfg.setdefault("eventos", []).append(ev)
+            if fixo.get("pasta"):
+                ev["pasta"] = fixo["pasta"]
+            log(f"  sessão de {dia}: destino escolhido no painel '{ev['nome']}'")
+        else:
+            ev = find_event(cfg, t_ini, t_fim)
+        if fixo and fixo.get("nome"):
+            pass
+        elif ev:
             log(f"  sessão de {dia}: evento conhecido '{ev['nome']}' (sem perguntar)")
         else:
             # só pergunta quando é evento novo; se ninguém responder, usa o nome padrão
@@ -705,14 +843,26 @@ def handle_card(vol: Path, worker: Worker, refazer=False):
 def _copy_and_queue(plan, all_jobs, cfg, reg, worker, copy_all_first, nomes):
 
     n = 0
+    k0 = 0
+    for event, sess in plan:  # tudo aparece na fila do painel já de cara
+        for job in sess:
+            k0 += 1
+            job["id"] = f"{time.time():.3f}-{k0}"
+            job["keys"] = [file_key(p) for p in job["parts"]]
+            fila_set(job["id"], nome=job["parts"][0].stem + ("_JUNTO" if len(job["parts"]) > 1 else ""),
+                     evento=event, estado="aguardando cópia", partes=[p.name for p in job["parts"]],
+                     gb=round(sum(p.stat().st_size for p in job["parts"]) / 1e9, 2))
     for event, sess in plan:
-        event_dir = Path(cfg["pasta_destino"]) / event
+        event_dir = event_path(cfg, event)
         event_dir.mkdir(parents=True, exist_ok=True)
         for job in sess:
             n += 1
+            if job["id"] in CANCEL:
+                marcar_ignorado(job, reg)
+                continue
+            fila_set(job["id"], estado="copiando")
             jobdir = CACHE_ROOT / f"{datetime.now():%Y%m%d_%H%M%S}_{n:03d}_{job['parts'][0].stem}"
             jobdir.mkdir(parents=True, exist_ok=True)
-            job["keys"] = [file_key(p) for p in job["parts"]]
             job["cache"] = []
             try:
                 for p in job["parts"]:
@@ -726,16 +876,20 @@ def _copy_and_queue(plan, all_jobs, cfg, reg, worker, copy_all_first, nomes):
                 with reg_lock:
                     for k in job["keys"]:
                         INFLIGHT.discard(k)
+                fila_del(job["id"])
                 continue
             log(f"  copiado [{n}/{len(all_jobs)}] {', '.join(p.name for p in job['parts'])} -> {event}")
             if not WORKER_STATE.get("fila"):
                 P.write_status("copiando", f"{n}/{len(all_jobs)} · {job['parts'][0].name}", evento=event)
+            fila_set(job["id"], estado="na fila")
             if copy_all_first:
                 worker.submit(job, cfg, event_dir, reg)
             else:
                 try:  # pouco espaço: processa um por vez
                     process_cached_job(job, cfg, event_dir, reg)
                     worker.did_any = True
+                except Cancelado:
+                    marcar_ignorado(job, reg)
                 except Exception as e:
                     log(f"ERRO: {e}")
                     notify("Erro ao estabilizar", f"{job['parts'][0].name}: {e}", sound="Basso")
@@ -744,6 +898,7 @@ def _copy_and_queue(plan, all_jobs, cfg, reg, worker, copy_all_first, nomes):
                     with reg_lock:
                         for k in job["keys"]:
                             INFLIGHT.discard(k)
+                    fila_del(job["id"])
     notify(nomes, "Cópia terminada — pode tirar o cartão. Estabilizando…", sound="Hero")
 
 
@@ -813,8 +968,23 @@ def main():
             time.sleep(2)  # dá tempo de montar
             start(k, now[k])
         seen = now
-        if REDO_FLAG.exists():  # pedido do app: refazer o cartão plugado com a suavidade atual
+        ler_remocoes()
+        if REDO_FLAG.exists():  # pedido do app: refazer o cartão plugado (ou uma pasta) com os ajustes atuais
+            try:
+                pedido = json.loads(REDO_FLAG.read_text(encoding="utf-8") or "{}")
+            except Exception:
+                pedido = {}
             REDO_FLAG.unlink(missing_ok=True)
+            pasta = Path(pedido["pasta"]) if isinstance(pedido, dict) and pedido.get("pasta") else None
+            if pasta:
+                if not pasta.is_dir():
+                    notify("Refazer", f"Pasta não encontrada: {pasta.name}", sound="Basso")
+                else:
+                    k = "pasta:" + str(pasta)
+                    if k not in busy:
+                        busy.add(k)
+                        threading.Thread(target=process, args=(k, pasta, "pasta"), daemon=True).start()
+                continue
             cards = {k: v for k, v in now.items() if (v / "DCIM").is_dir()}
             if not cards:
                 notify("Refazer", "Plugue o cartão primeiro e peça de novo.", sound="Basso")

@@ -53,10 +53,11 @@ def rrect(c, x1, y1, x2, y2, r, **kw):
     return c.create_polygon(pts, smooth=True, **kw)
 
 
-def hgrad(c, x1, y1, x2, y2, c1, c2, tag=None):
+def hgrad(c, x1, y1, x2, y2, c1, c2, tag=None, step=3):
+    """Gradiente horizontal em faixas de 3 px (leve para redesenhar)."""
     w = max(1, int(x2 - x1))
-    for i in range(w):
-        c.create_line(x1 + i, y1, x1 + i, y2, fill=mix(c1, c2, i / w), tags=tag)
+    for i in range(0, w, step):
+        c.create_rectangle(x1 + i, y1, min(x2, x1 + i + step), y2, fill=mix(c1, c2, i / w), outline="", tags=tag)
 
 
 class Card(tk.Canvas):
@@ -247,11 +248,13 @@ class Progress(tk.Canvas):
 
 
 class Pill(tk.Canvas):
-    """Selo de estado com bolinha pulsando."""
+    """Selo de estado com bolinha pulsando (o pulso só troca a cor do halo — não refaz o layout)."""
 
     def __init__(self, parent, bg=BG):
         super().__init__(parent, height=34, width=200, bg=bg, highlightthickness=0, bd=0)
         self.text, self.color, self.t, self.pulse = "", MUTED, 0.0, False
+        self._largura = None
+        self._halo = None
 
     def set(self, text, color, pulse=False):
         if (text, color, pulse) != (self.text, self.color, self.pulse):
@@ -259,19 +262,20 @@ class Pill(tk.Canvas):
             self.draw()
 
     def tick(self):
-        if self.pulse:
+        if self.pulse and self._halo is not None:
             self.t = (self.t + 0.08) % 2
-            self.draw()
+            k = abs(1 - self.t)
+            self.itemconfigure(self._halo, fill=mix(mix(BG, self.color, 0.16), self.color, 0.35 * k))
 
     def draw(self):
         f = font(12, "bold")
         w = f.measure(self.text) + 48
-        self.configure(width=w)
+        if w != self._largura:  # só mexe no tamanho quando o texto muda
+            self._largura = w
+            self.configure(width=w)
         self.delete("all")
         rrect(self, 1, 1, w - 2, 32, 16, fill=mix(BG, self.color, 0.16), outline=mix(BG, self.color, 0.45))
-        k = abs(1 - self.t) if self.pulse else 1
-        halo = mix(mix(BG, self.color, 0.16), self.color, 0.35 * k)
-        self.create_oval(10, 9, 26, 25, fill=halo, outline="")
+        self._halo = self.create_oval(10, 9, 26, 25, fill=mix(mix(BG, self.color, 0.16), self.color, 0.35), outline="")
         self.create_oval(14, 13, 22, 21, fill=self.color, outline="")
         self.create_text(34, 17, text=self.text, anchor="w", fill=self.color, font=f)
 

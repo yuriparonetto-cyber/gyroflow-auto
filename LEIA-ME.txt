@@ -33,7 +33,8 @@ ANTES DE INSTALAR
      Ou: Ajustes do Sistema > Privacidade e Segurança > "Abrir Mesmo Assim".
 2. Espera terminar (menos de 1 minuto). O app "Gyroflow Auto" aparece na
    Área de Trabalho e já abre.
-3. Na primeira vez, aceite quando o Mac pedir acesso a volumes removíveis.
+3. Na primeira vez, aceite quando o Mac pedir acesso à Área de Trabalho (Mesa)
+   e a volumes removíveis — sem isso ele não consegue ler o cartão nem salvar os vídeos.
 
 Uso no Mac:
 - O app abre um PAINEL: mostra se está ligado, o vídeo que está estabilizando
@@ -45,6 +46,10 @@ Uso no Mac:
   com os ajustes atuais
   (os novos saem como *_stabilized_60.mp4, ao lado dos antigos).
 - "Aplicar cor numa pasta…": cor sob demanda (veja COR abaixo).
+- Botão "Fila": mostra o que está copiando/esperando/estabilizando; dá para
+  remover um vídeo (ele não volta ao plugar o cartão de novo).
+- Os brutos ficam guardados em <Evento>/BRUTOS. Para refazer sem o cartão:
+  "Refazer de uma pasta…" e escolha essa pasta BRUTOS.
 - Fechar a janela deixa ligado no Dock. Para desligar: ⌘Q ou botão "Desligar".
 
 ----------------------------------------------------------
