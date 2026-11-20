@@ -723,6 +723,18 @@ def main():
         for d in CACHE_ROOT.iterdir():
             shutil.rmtree(d, ignore_errors=True) if d.is_dir() else d.unlink(missing_ok=True)
     log(f"=== Gyroflow Auto iniciado ({sys.platform}) — Gyroflow: {GYROFLOW} ===")
+    # padrão do Gyroflow com lente fixa = todas as câmeras usam essa lente (estabilização ruim)
+    try:
+        pre = P.gyro_default_preset()
+        cal = json.load(open(pre, encoding="utf-8")).get("calibration_data") if pre else None
+        if cal and (cal.get("camera_brand") or cal.get("camera_model")):
+            lente = f"{cal.get('camera_brand', '')} {cal.get('camera_model', '')}".strip()
+            log(f"ATENÇÃO: o padrão salvo do Gyroflow tem a lente '{lente}' fixa — vale para TODAS as câmeras. "
+                f"Abra o Gyroflow, carregue um vídeo sem lente definida e salve o padrão de novo (ou apague {pre}).")
+            notify("Atenção: lente fixa no Gyroflow",
+                   f"O padrão do Gyroflow força a lente {lente} em todas as câmeras. Veja o log.", sound="Basso")
+    except Exception:
+        pass
     P.write_status("ligado")
     notify("Ligado", "Esperando cartão de memória…")
     worker = Worker()
