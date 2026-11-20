@@ -465,14 +465,14 @@ def refazer():
 
 
 def refazer_pasta():
-    pasta = filedialog.askdirectory(parent=root, title="Pasta com os brutos (ex.: <Evento>/BRUTOS)",
+    pasta = filedialog.askdirectory(parent=root, title="Pasta com os vídeos brutos para estabilizar",
                                     initialdir=str(cfg_get("pasta_destino", P.desktop_dir())))
     if not pasta:
         return
     l1, l2 = aj_resumo()
     if confirmar("Refazer a partir desta pasta?",
-                 f"{Path(pasta).name}\n\nEstabiliza os brutos desta pasta que ainda não estão com os ajustes atuais:\n"
-                 f"{l1}\n{l2}", "Refazer"):
+                 f"{Path(pasta).name}\n\nEstabiliza TODOS os vídeos desta pasta (mesmo os já feitos) com os ajustes atuais:\n"
+                 f"{l1}\n{l2}\n\nOs vídeos saem nesta mesma pasta (ou no evento, se for a pasta BRUTOS).", "Estabilizar"):
         (P.APP_DIR / "refazer.flag").write_text(json.dumps({"pasta": pasta}, ensure_ascii=False), encoding="utf-8")
         toast("Refazendo a partir da pasta…")
 
@@ -666,7 +666,7 @@ lnk_auto.bind("<Button-1>", lambda e: voltar_automatico())
 V.Button(ev_btns, "Novo evento", novo_evento, "primary", size=12, height=32, padx=14).pack(side="left")
 V.Button(ev_btns, "Pasta antiga…", pasta_antiga, "ghost", size=12, height=32, padx=12).pack(side="left", padx=(8, 0))
 V.Button(acts, "Refazer cartão plugado", refazer, "primary", bg=BG).pack(side="left")
-V.Button(acts, "Refazer de uma pasta…", refazer_pasta, "ghost", bg=BG).pack(side="left", padx=(10, 0))
+V.Button(acts, "Estabilizar pasta…", refazer_pasta, "ghost", bg=BG).pack(side="left", padx=(10, 0))
 V.Button(acts, "Aplicar cor…", aplicar_cor, "ghost", bg=BG).pack(side="left", padx=10)
 btn_fila = V.Button(acts, "Fila", abrir_fila, "ghost", bg=BG, width=96)
 btn_fila.pack(side="left")

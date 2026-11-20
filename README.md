@@ -21,7 +21,7 @@ O instalador baixa sozinho o Python, o ffmpeg e o mp4_merge. O guia completo est
 
 Um painel escuro mostra tudo ao vivo: se está ligado, o vídeo que está estabilizando (com % e quanto falta), a fila, o último evento, o total de vídeos estabilizados e a atividade. A suavidade (30%, 60% padrão, 80%), o "Refazer cartão plugado" e o "Aplicar cor" ficam a um clique. Quando chega um evento novo, a pergunta aparece no próprio painel.
 
-Também no painel: **Fila** (ver e remover o que está sendo estabilizado), **Novo evento / Pasta antiga** (escolher para onde vão os próximos cartões) e **Refazer de uma pasta** (os brutos ficam guardados em `<Evento>/BRUTOS`).
+Também no painel: **Fila** (ver e remover o que está sendo estabilizado), **Novo evento / Pasta antiga** (escolher para onde vão os próximos cartões) e **Estabilizar pasta** (os brutos ficam guardados em `<Evento>/BRUTOS`).
 
 ## O que ele faz
 

@@ -635,7 +635,7 @@ def process_cached_job(job, cfg, event_dir: Path, reg):
     src = cache_files[0]
     meta = job.get("meta") or read_source_meta(src)
     jid = job.get("id")
-    guardar = bool(cfg.get("guardar_brutos", True))
+    guardar = bool(cfg.get("guardar_brutos", True)) and not job.get("sem_guardar")
     if len(cache_files) > 1:
         merged = jobdir / (src.stem + "_JUNTO.MP4")
         fila_set(jid, estado="juntando")
@@ -730,8 +730,8 @@ def handle_card(vol: Path, worker: Worker, refazer=False):
             return False
         if k in reg and reg[k].get("ignorado") and refazer != "pasta":
             return False  # o usuário tirou da fila
-        if refazer == "pasta":  # refazer a partir de uma pasta: o que não está com os ajustes atuais
-            return k not in reg or reg[k].get("ajustes") != sig
+        if refazer == "pasta":  # o usuário escolheu a pasta: estabiliza tudo dela, mesmo o que já foi feito
+            return True
         if refazer == "antigos":  # só o que foi feito com a estabilização antiga (lente/suavização erradas)
             return k in reg and not reg[k].get("ajustes")
         if refazer:  # só o que já foi feito com outros ajustes
@@ -767,6 +767,8 @@ def handle_card(vol: Path, worker: Worker, refazer=False):
                 INFLIGHT.discard(file_key(f))
         raise
     for job in jobs:
+        if refazer == "pasta":
+            job["sem_guardar"] = True  # os brutos já estão nessa pasta
         if refazer:
             prop = ajustes(cfg)["p"]
             job["sufixo_extra"] = f"_{pct}" + ("" if prop == "original" else "_" + prop.replace(":", "x"))  # ex.: _stabilized_60.mp4, ao lado do anterior
@@ -784,6 +786,9 @@ def handle_card(vol: Path, worker: Worker, refazer=False):
 
     plan = []
     fixo = cfg.get("evento_fixo") if isinstance(cfg.get("evento_fixo"), dict) else None
+    if refazer == "pasta":  # saída na própria pasta escolhida (ou no evento, se for a pasta BRUTOS)
+        dest = vol.parent if vol.name.upper() == str(cfg.get("pasta_brutos", "BRUTOS")).upper() else vol
+        fixo = {"nome": dest.name, "pasta": str(dest)}
     for sess in sessions:
         t_ini, t_fim = sess[0]["t"], sess[-1]["t"]
         dia = datetime.fromtimestamp(t_ini).strftime("%d/%m/%Y %H:%M")

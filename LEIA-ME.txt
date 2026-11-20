@@ -49,7 +49,7 @@ Uso no Mac:
 - Botão "Fila": mostra o que está copiando/esperando/estabilizando; dá para
   remover um vídeo (ele não volta ao plugar o cartão de novo).
 - Os brutos ficam guardados em <Evento>/BRUTOS. Para refazer sem o cartão:
-  "Refazer de uma pasta…" e escolha essa pasta BRUTOS.
+  "Estabilizar pasta…" e escolha essa pasta BRUTOS.
 - Fechar a janela deixa ligado no Dock. Para desligar: ⌘Q ou botão "Desligar".
 
 ----------------------------------------------------------
